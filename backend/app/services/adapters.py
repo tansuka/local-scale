@@ -270,29 +270,55 @@ class LiveBleAdapter(ScaleAdapter):
         self,
         scanner_cls: Any,
     ) -> tuple[list[dict[str, Any]], list[tuple[dict[str, Any], Any]]]:
-        round_payloads: list[dict[str, Any]] = []
-        matched_targets: list[tuple[dict[str, Any], Any]] = []
+        seen_devices: dict[str, dict[str, Any]] = {}
+        matched_targets: dict[str, tuple[dict[str, Any], Any]] = {}
+        match_event = asyncio.Event()
+
+        def detection_callback(device: Any, advertisement_data: Any) -> None:
+            serialized = self._serialize_match(device, advertisement_data)
+            serialized["match_reasons"] = self._match_reasons(serialized)
+            device_key = self._device_key(serialized, f"detected-{len(seen_devices)}")
+            seen_devices[device_key] = serialized
+            if serialized["match_reasons"]:
+                matched_targets[device_key] = (serialized, device)
+                match_event.set()
 
         try:
+            scanner = scanner_cls(detection_callback=detection_callback)
+            await scanner.start()
+            try:
+                await asyncio.wait_for(match_event.wait(), timeout=self._scan_timeout_seconds)
+            except TimeoutError:
+                pass
+            finally:
+                await scanner.stop()
+            if seen_devices:
+                return list(seen_devices.values()), list(matched_targets.values())
+        except TypeError:
+            devices = await scanner_cls.discover(timeout=self._scan_timeout_seconds)
+            round_payloads = [self._serialize_match(device) for device in devices]
+            round_matches: list[tuple[dict[str, Any], Any]] = []
+            for device, serialized in zip(devices, round_payloads, strict=False):
+                serialized["match_reasons"] = self._match_reasons(serialized)
+                if serialized["match_reasons"]:
+                    round_matches.append((serialized, device))
+            return round_payloads, round_matches
+        except Exception:  # pragma: no cover - fallback for scanner backends that reject callbacks
             discovered = await scanner_cls.discover(
                 timeout=self._scan_timeout_seconds,
                 return_adv=True,
             )
+            round_payloads = []
+            round_matches = []
             for device, advertisement_data in discovered.values():
                 serialized = self._serialize_match(device, advertisement_data)
                 serialized["match_reasons"] = self._match_reasons(serialized)
                 round_payloads.append(serialized)
                 if serialized["match_reasons"]:
-                    matched_targets.append((serialized, device))
-        except TypeError:
-            devices = await scanner_cls.discover(timeout=self._scan_timeout_seconds)
-            round_payloads = [self._serialize_match(device) for device in devices]
-            for device, serialized in zip(devices, round_payloads, strict=False):
-                serialized["match_reasons"] = self._match_reasons(serialized)
-                if serialized["match_reasons"]:
-                    matched_targets.append((serialized, device))
+                    round_matches.append((serialized, device))
+            return round_payloads, round_matches
 
-        return round_payloads, matched_targets
+        return list(seen_devices.values()), list(matched_targets.values())
 
     async def _discover_targets(
         self,
