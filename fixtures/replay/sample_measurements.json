@@ -1,0 +1,122 @@
+{
+  "patterns": [
+    {
+      "weight_delta": 0.2,
+      "fat_pct_delta": -0.12,
+      "water_pct_delta": 0.08,
+      "muscle_pct_delta": 0.05,
+      "skeletal_muscle_pct_delta": 0.04,
+      "visceral_fat_delta": 0.0
+    },
+    {
+      "weight_delta": -0.15,
+      "fat_pct_delta": 0.05,
+      "water_pct_delta": -0.04,
+      "muscle_pct_delta": -0.03,
+      "skeletal_muscle_pct_delta": -0.02,
+      "visceral_fat_delta": 0.0
+    },
+    {
+      "weight_delta": 0.1,
+      "fat_pct_delta": -0.08,
+      "water_pct_delta": 0.05,
+      "muscle_pct_delta": 0.04,
+      "skeletal_muscle_pct_delta": 0.03,
+      "visceral_fat_delta": -0.1
+    }
+  ],
+  "profiles": [
+    {
+      "name": "Alex",
+      "sex": "male",
+      "birth_date": "1989-08-17",
+      "height_cm": 181,
+      "color": "#0f766e",
+      "notes": "Demo profile for replay mode.",
+      "measurements": [
+        {
+          "measured_at": "2026-02-18T07:10:00+00:00",
+          "weight_kg": 81.7,
+          "fat_pct": 19.9,
+          "water_pct": 55.2,
+          "muscle_pct": 47.5,
+          "skeletal_muscle_pct": 41.2,
+          "visceral_fat": 10.1
+        },
+        {
+          "measured_at": "2026-02-25T07:12:00+00:00",
+          "weight_kg": 81.5,
+          "fat_pct": 19.7,
+          "water_pct": 55.3,
+          "muscle_pct": 47.6,
+          "skeletal_muscle_pct": 41.3,
+          "visceral_fat": 10.0
+        },
+        {
+          "measured_at": "2026-03-03T07:09:00+00:00",
+          "weight_kg": 81.3,
+          "fat_pct": 19.4,
+          "water_pct": 55.4,
+          "muscle_pct": 47.8,
+          "skeletal_muscle_pct": 41.4,
+          "visceral_fat": 9.9
+        },
+        {
+          "measured_at": "2026-03-10T07:15:00+00:00",
+          "weight_kg": 81.2,
+          "fat_pct": 19.2,
+          "water_pct": 55.6,
+          "muscle_pct": 47.9,
+          "skeletal_muscle_pct": 41.5,
+          "visceral_fat": 9.8
+        }
+      ]
+    },
+    {
+      "name": "Mila",
+      "sex": "female",
+      "birth_date": "1992-05-04",
+      "height_cm": 167,
+      "color": "#dc6b2f",
+      "notes": "Demo profile for replay mode.",
+      "measurements": [
+        {
+          "measured_at": "2026-02-18T06:40:00+00:00",
+          "weight_kg": 64.9,
+          "fat_pct": 27.8,
+          "water_pct": 51.1,
+          "muscle_pct": 34.8,
+          "skeletal_muscle_pct": 31.9,
+          "visceral_fat": 7.8
+        },
+        {
+          "measured_at": "2026-02-25T06:41:00+00:00",
+          "weight_kg": 64.6,
+          "fat_pct": 27.5,
+          "water_pct": 51.2,
+          "muscle_pct": 34.9,
+          "skeletal_muscle_pct": 32.0,
+          "visceral_fat": 7.7
+        },
+        {
+          "measured_at": "2026-03-03T06:42:00+00:00",
+          "weight_kg": 64.4,
+          "fat_pct": 27.2,
+          "water_pct": 51.4,
+          "muscle_pct": 35.0,
+          "skeletal_muscle_pct": 32.2,
+          "visceral_fat": 7.6
+        },
+        {
+          "measured_at": "2026-03-10T06:39:00+00:00",
+          "weight_kg": 64.3,
+          "fat_pct": 27.0,
+          "water_pct": 51.5,
+          "muscle_pct": 35.2,
+          "skeletal_muscle_pct": 32.3,
+          "visceral_fat": 7.5
+        }
+      ]
+    }
+  ]
+}

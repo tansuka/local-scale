@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "local-scale-backend"
+version = "0.1.0"
+description = "Local-first backend for Bluetooth body scale tracking"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "bleak>=0.22.3",
+  "fastapi>=0.115.0",
+  "python-multipart>=0.0.9",
+  "sqlalchemy>=2.0.31",
+  "uvicorn>=0.30.6",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.27.0",
+  "pytest>=8.3.2",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]

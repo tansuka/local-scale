@@ -1,0 +1,17 @@
+[Unit]
+Description=Local Scale FastAPI Service
+After=network-online.target bluetooth.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=localscale
+Group=localscale
+WorkingDirectory=/opt/local-scale/backend
+EnvironmentFile=/etc/local-scale/local-scale.env
+ExecStart=/opt/local-scale/backend/.venv/bin/uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8040
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
