@@ -14,6 +14,7 @@ dependencies = [
   "python-multipart>=0.0.9",
   "sqlalchemy>=2.0.31",
   "uvicorn>=0.30.6",
+  "websockets>=12.0",
 ]
 
 [project.optional-dependencies]
