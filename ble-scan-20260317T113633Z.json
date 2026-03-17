@@ -1,0 +1,413 @@
+{
+  "all_devices": [
+    {
+      "address": "78:5E:50:5E:CE:92",
+      "local_name": null,
+      "manufacturer_data": {
+        "76": "10052b98228edc"
+      },
+      "match_reasons": [],
+      "name": "Unknown",
+      "normalized_address": "78:5e:50:5e:ce:92",
+      "platform_data": [
+        "/org/bluez/hci0/dev_78_5E_50_5E_CE_92",
+        "{'Address': '78:5E:50:5E:CE:92', 'AddressType': 'random', 'Alias': '78-5E-50-5E-CE-92', 'Paired': False, 'Bonded': False, 'Trusted': False, 'Blocked': False, 'LegacyPairing': False, 'RSSI': -50, 'Connected': False, 'UUIDs': [], 'Adapter': '/org/bluez/hci0', 'ManufacturerData': {76: b'\\x10\\x05+\\x98\"\\x8e\\xdc'}, 'TxPower': 0, 'ServicesResolved': False, 'AdvertisingFlags': b'\\x1a'}"
+      ],
+      "rssi": -50,
+      "service_data": {},
+      "service_uuids": [],
+      "tx_power": 0
+    },
+    {
+      "address": "7E:D0:5B:F9:66:73",
+      "local_name": null,
+      "manufacturer_data": {
+        "76": "160800149601eb1464fc"
+      },
+      "match_reasons": [],
+      "name": "Unknown",
+      "normalized_address": "7e:d0:5b:f9:66:73",
+      "platform_data": [
+        "/org/bluez/hci0/dev_7E_D0_5B_F9_66_73",
+        "{'Address': '7E:D0:5B:F9:66:73', 'AddressType': 'random', 'Alias': '7E-D0-5B-F9-66-73', 'Paired': False, 'Bonded': False, 'Trusted': False, 'Blocked': False, 'LegacyPairing': False, 'RSSI': -38, 'Connected': False, 'UUIDs': [], 'Adapter': '/org/bluez/hci0', 'ManufacturerData': {76: b'\\x16\\x08\\x00\\x14\\x96\\x01\\xeb\\x14d\\xfc'}, 'ServicesResolved': False, 'AdvertisingFlags': b'\\x1a'}"
+      ],
+      "rssi": -38,
+      "service_data": {},
+      "service_uuids": [],
+      "tx_power": null
+    },
+    {
+      "address": "5C:F7:62:8C:57:DC",
+      "local_name": null,
+      "manufacturer_data": {
+        "76": "1006421d7dac5b68"
+      },
+      "match_reasons": [],
+      "name": "Unknown",
+      "normalized_address": "5c:f7:62:8c:57:dc",
+      "platform_data": [
+        "/org/bluez/hci0/dev_5C_F7_62_8C_57_DC",
+        "{'Address': '5C:F7:62:8C:57:DC', 'AddressType': 'random', 'Alias': '5C-F7-62-8C-57-DC', 'Paired': False, 'Bonded': False, 'Trusted': False, 'Blocked': False, 'LegacyPairing': False, 'RSSI': -38, 'Connected': False, 'UUIDs': [], 'Adapter': '/org/bluez/hci0', 'ManufacturerData': {76: b'\\x10\\x06B\\x1d}\\xac[h'}, 'ServicesResolved': False, 'AdvertisingFlags': b'\\x1a', 'TxPower': 12}"
+      ],
+      "rssi": -38,
+      "service_data": {},
+      "service_uuids": [],
+      "tx_power": 12
+    },
+    {
+      "address": "6A:9B:84:6F:2E:C2",
+      "local_name": null,
+      "manufacturer_data": {
+        "76": "09081302c0a83daa1b5816080026cf179ac62291"
+      },
+      "match_reasons": [],
+      "name": "Unknown",
+      "normalized_address": "6a:9b:84:6f:2e:c2",
+      "platform_data": [
+        "/org/bluez/hci0/dev_6A_9B_84_6F_2E_C2",
+        "{'Address': '6A:9B:84:6F:2E:C2', 'AddressType': 'random', 'Alias': '6A-9B-84-6F-2E-C2', 'Paired': False, 'Bonded': False, 'Trusted': False, 'Blocked': False, 'LegacyPairing': False, 'RSSI': -44, 'Connected': False, 'UUIDs': [], 'Adapter': '/org/bluez/hci0', 'ManufacturerData': {76: b'\\t\\x08\\x13\\x02\\xc0\\xa8=\\xaa\\x1bX\\x16\\x08\\x00&\\xcf\\x17\\x9a\\xc6\"\\x91'}, 'ServicesResolved': False, 'AdvertisingFlags': b'\\x1a'}"
+      ],
+      "rssi": -44,
+      "service_data": {},
+      "service_uuids": [],
+      "tx_power": null
+    },
+    {
+      "address": "4B:A9:46:DC:63:33",
+      "local_name": null,
+      "manufacturer_data": {
+        "76": "0c0e089c831e7a791057ab7d142a3bb51006471db5b91908"
+      },
+      "match_reasons": [],
+      "name": "Unknown",
+      "normalized_address": "4b:a9:46:dc:63:33",
+      "platform_data": [
+        "/org/bluez/hci0/dev_4B_A9_46_DC_63_33",
+        "{'Address': '4B:A9:46:DC:63:33', 'AddressType': 'random', 'Alias': '4B-A9-46-DC-63-33', 'Paired': False, 'Bonded': False, 'Trusted': False, 'Blocked': False, 'LegacyPairing': False, 'RSSI': -38, 'Connected': False, 'UUIDs': [], 'Adapter': '/org/bluez/hci0', 'ManufacturerData': {76: b'\\x0c\\x0e\\x08\\x9c\\x83\\x1ezy\\x10W\\xab}\\x14*;\\xb5\\x10\\x06G\\x1d\\xb5\\xb9\\x19\\x08'}, 'ServicesResolved': False, 'AdvertisingFlags': b'\\x1a'}"
+      ],
+      "rssi": -38,
+      "service_data": {},
+      "service_uuids": [],
+      "tx_power": null
+    },
+    {
+      "address": "48:DA:BD:A7:04:E6",
+      "local_name": null,
+      "manufacturer_data": {
+        "76": "1006421d7dac5b68"
+      },
+      "match_reasons": [],
+      "name": "Unknown",
+      "normalized_address": "48:da:bd:a7:04:e6",
+      "platform_data": [
+        "/org/bluez/hci0/dev_48_DA_BD_A7_04_E6",
+        "{'Address': '48:DA:BD:A7:04:E6', 'AddressType': 'random', 'Alias': '48-DA-BD-A7-04-E6', 'Paired': False, 'Bonded': False, 'Trusted': False, 'Blocked': False, 'LegacyPairing': False, 'RSSI': -40, 'Connected': False, 'UUIDs': [], 'Adapter': '/org/bluez/hci0', 'ManufacturerData': {76: b'\\x10\\x06B\\x1d}\\xac[h'}, 'ServicesResolved': False, 'AdvertisingFlags': b'\\x1a', 'TxPower': 12}"
+      ],
+      "rssi": -40,
+      "service_data": {},
+      "service_uuids": [],
+      "tx_power": 12
+    },
+    {
+      "address": "49:60:D9:2A:6F:F1",
+      "local_name": null,
+      "manufacturer_data": {
+        "76": "0c0e089c831e7a791057ab7d142a3bb51006471db5b91908"
+      },
+      "match_reasons": [],
+      "name": "Unknown",
+      "normalized_address": "49:60:d9:2a:6f:f1",
+      "platform_data": [
+        "/org/bluez/hci0/dev_49_60_D9_2A_6F_F1",
+        "{'Address': '49:60:D9:2A:6F:F1', 'AddressType': 'random', 'Alias': '49-60-D9-2A-6F-F1', 'Paired': False, 'Bonded': False, 'Trusted': False, 'Blocked': False, 'LegacyPairing': False, 'RSSI': -38, 'Connected': False, 'UUIDs': [], 'Adapter': '/org/bluez/hci0', 'ManufacturerData': {76: b'\\x0c\\x0e\\x08\\x9c\\x83\\x1ezy\\x10W\\xab}\\x14*;\\xb5\\x10\\x06G\\x1d\\xb5\\xb9\\x19\\x08'}, 'ServicesResolved': False, 'AdvertisingFlags': b'\\x1a'}"
+      ],
+      "rssi": -38,
+      "service_data": {},
+      "service_uuids": [],
+      "tx_power": null
+    },
+    {
+      "address": "61:23:18:BE:5E:69",
+      "local_name": null,
+      "manufacturer_data": {
+        "76": "0100000000000000000000000080000000"
+      },
+      "match_reasons": [],
+      "name": "Unknown",
+      "normalized_address": "61:23:18:be:5e:69",
+      "platform_data": [
+        "/org/bluez/hci0/dev_61_23_18_BE_5E_69",
+        "{'Address': '61:23:18:BE:5E:69', 'AddressType': 'random', 'Alias': '61-23-18-BE-5E-69', 'Paired': False, 'Bonded': False, 'Trusted': False, 'Blocked': False, 'LegacyPairing': False, 'RSSI': -50, 'Connected': False, 'UUIDs': [], 'Adapter': '/org/bluez/hci0', 'ManufacturerData': {76: b'\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x80\\x00\\x00\\x00'}, 'TxPower': 0, 'ServicesResolved': False, 'AdvertisingFlags': b'\\x1a'}"
+      ],
+      "rssi": -50,
+      "service_data": {},
+      "service_uuids": [],
+      "tx_power": 0
+    },
+    {
+      "address": "69:75:EB:E6:E9:30",
+      "local_name": null,
+      "manufacturer_data": {
+        "76": "16080025c4ee40c978ec"
+      },
+      "match_reasons": [],
+      "name": "Unknown",
+      "normalized_address": "69:75:eb:e6:e9:30",
+      "platform_data": [
+        "/org/bluez/hci0/dev_69_75_EB_E6_E9_30",
+        "{'Address': '69:75:EB:E6:E9:30', 'AddressType': 'random', 'Alias': '69-75-EB-E6-E9-30', 'Paired': False, 'Bonded': False, 'Trusted': False, 'Blocked': False, 'LegacyPairing': False, 'RSSI': -44, 'Connected': False, 'UUIDs': [], 'Adapter': '/org/bluez/hci0', 'ManufacturerData': {76: b'\\x16\\x08\\x00%\\xc4\\xee@\\xc9x\\xec'}, 'ServicesResolved': False, 'AdvertisingFlags': b'\\x1a'}"
+      ],
+      "rssi": -44,
+      "service_data": {},
+      "service_uuids": [],
+      "tx_power": null
+    },
+    {
+      "address": "EE:F1:CD:98:69:82",
+      "local_name": null,
+      "manufacturer_data": {
+        "76": "12020001"
+      },
+      "match_reasons": [],
+      "name": "Unknown",
+      "normalized_address": "ee:f1:cd:98:69:82",
+      "platform_data": [
+        "/org/bluez/hci0/dev_EE_F1_CD_98_69_82",
+        "{'Address': 'EE:F1:CD:98:69:82', 'AddressType': 'random', 'Alias': 'EE-F1-CD-98-69-82', 'Paired': False, 'Bonded': False, 'Trusted': False, 'Blocked': False, 'LegacyPairing': False, 'RSSI': -38, 'Connected': False, 'UUIDs': [], 'Adapter': '/org/bluez/hci0', 'ManufacturerData': {76: b'\\x12\\x02\\x00\\x01'}, 'ServicesResolved': False, 'AdvertisingFlags': b'\\x00'}"
+      ],
+      "rssi": -38,
+      "service_data": {},
+      "service_uuids": [],
+      "tx_power": null
+    },
+    {
+      "address": "E5:36:C3:FA:64:46",
+      "local_name": null,
+      "manufacturer_data": {
+        "76": "12020002"
+      },
+      "match_reasons": [],
+      "name": "Unknown",
+      "normalized_address": "e5:36:c3:fa:64:46",
+      "platform_data": [
+        "/org/bluez/hci0/dev_E5_36_C3_FA_64_46",
+        "{'Address': 'E5:36:C3:FA:64:46', 'AddressType': 'random', 'Alias': 'E5-36-C3-FA-64-46', 'Paired': False, 'Bonded': False, 'Trusted': False, 'Blocked': False, 'LegacyPairing': False, 'RSSI': -54, 'Connected': False, 'UUIDs': [], 'Adapter': '/org/bluez/hci0', 'ManufacturerData': {76: b'\\x12\\x02\\x00\\x02'}, 'ServicesResolved': False, 'AdvertisingFlags': b'\\x00'}"
+      ],
+      "rssi": -54,
+      "service_data": {},
+      "service_uuids": [],
+      "tx_power": null
+    },
+    {
+      "address": "41:06:4A:9D:15:1E",
+      "local_name": null,
+      "manufacturer_data": {
+        "15552": "1d0a138808082541064a9d151e"
+      },
+      "match_reasons": [],
+      "name": "Unknown",
+      "normalized_address": "41:06:4a:9d:15:1e",
+      "platform_data": [
+        "/org/bluez/hci0/dev_41_06_4A_9D_15_1E",
+        "{'Address': '41:06:4A:9D:15:1E', 'AddressType': 'public', 'Alias': '41-06-4A-9D-15-1E', 'Paired': False, 'Bonded': False, 'Trusted': False, 'Blocked': False, 'LegacyPairing': False, 'RSSI': -54, 'Connected': False, 'UUIDs': [], 'Adapter': '/org/bluez/hci0', 'ManufacturerData': {15552: b'\\x1d\\n\\x13\\x88\\x08\\x08%A\\x06J\\x9d\\x15\\x1e'}, 'ServicesResolved': False, 'AdvertisingFlags': b'\\x00'}"
+      ],
+      "rssi": -54,
+      "service_data": {},
+      "service_uuids": [],
+      "tx_power": null
+    },
+    {
+      "address": "61:4F:0D:67:4C:72",
+      "local_name": null,
+      "manufacturer_data": {
+        "76": "10050998da5b2a"
+      },
+      "match_reasons": [],
+      "name": "Unknown",
+      "normalized_address": "61:4f:0d:67:4c:72",
+      "platform_data": [
+        "/org/bluez/hci0/dev_61_4F_0D_67_4C_72",
+        "{'Address': '61:4F:0D:67:4C:72', 'AddressType': 'random', 'Alias': '61-4F-0D-67-4C-72', 'Paired': False, 'Bonded': False, 'Trusted': False, 'Blocked': False, 'LegacyPairing': False, 'RSSI': -60, 'Connected': False, 'UUIDs': [], 'Adapter': '/org/bluez/hci0', 'ManufacturerData': {76: b'\\x10\\x05\\t\\x98\\xda[*'}, 'TxPower': 9, 'ServicesResolved': False, 'AdvertisingFlags': b'\\x1a'}"
+      ],
+      "rssi": -60,
+      "service_data": {},
+      "service_uuids": [],
+      "tx_power": 9
+    },
+    {
+      "address": "F9:B1:A8:BE:BA:3B",
+      "local_name": null,
+      "manufacturer_data": {
+        "76": "12020002"
+      },
+      "match_reasons": [],
+      "name": "Unknown",
+      "normalized_address": "f9:b1:a8:be:ba:3b",
+      "platform_data": [
+        "/org/bluez/hci0/dev_F9_B1_A8_BE_BA_3B",
+        "{'Address': 'F9:B1:A8:BE:BA:3B', 'AddressType': 'random', 'Alias': 'F9-B1-A8-BE-BA-3B', 'Paired': False, 'Bonded': False, 'Trusted': False, 'Blocked': False, 'LegacyPairing': False, 'RSSI': -38, 'Connected': False, 'UUIDs': [], 'Adapter': '/org/bluez/hci0', 'ManufacturerData': {76: b'\\x12\\x02\\x00\\x02'}, 'ServicesResolved': False, 'AdvertisingFlags': b'\\x00'}"
+      ],
+      "rssi": -38,
+      "service_data": {},
+      "service_uuids": [],
+      "tx_power": null
+    },
+    {
+      "address": "D9:5F:C1:4A:5F:16",
+      "local_name": null,
+      "manufacturer_data": {
+        "76": "12020000"
+      },
+      "match_reasons": [],
+      "name": "Unknown",
+      "normalized_address": "d9:5f:c1:4a:5f:16",
+      "platform_data": [
+        "/org/bluez/hci0/dev_D9_5F_C1_4A_5F_16",
+        "{'Address': 'D9:5F:C1:4A:5F:16', 'AddressType': 'random', 'Alias': 'D9-5F-C1-4A-5F-16', 'Paired': False, 'Bonded': False, 'Trusted': False, 'Blocked': False, 'LegacyPairing': False, 'RSSI': -46, 'Connected': False, 'UUIDs': [], 'Adapter': '/org/bluez/hci0', 'ManufacturerData': {76: b'\\x12\\x02\\x00\\x00'}, 'ServicesResolved': False, 'AdvertisingFlags': b'\\x00'}"
+      ],
+      "rssi": -46,
+      "service_data": {},
+      "service_uuids": [],
+      "tx_power": null
+    },
+    {
+      "address": "E9:58:1A:EC:0D:EF",
+      "local_name": null,
+      "manufacturer_data": {
+        "76": "1202d403"
+      },
+      "match_reasons": [],
+      "name": "Unknown",
+      "normalized_address": "e9:58:1a:ec:0d:ef",
+      "platform_data": [
+        "/org/bluez/hci0/dev_E9_58_1A_EC_0D_EF",
+        "{'Address': 'E9:58:1A:EC:0D:EF', 'AddressType': 'random', 'Alias': 'E9-58-1A-EC-0D-EF', 'Paired': False, 'Bonded': False, 'Trusted': False, 'Blocked': False, 'LegacyPairing': False, 'RSSI': -54, 'Connected': False, 'UUIDs': [], 'Adapter': '/org/bluez/hci0', 'ManufacturerData': {76: b'\\x12\\x02\\xd4\\x03'}, 'ServicesResolved': False, 'AdvertisingFlags': b'\\x00'}"
+      ],
+      "rssi": -54,
+      "service_data": {},
+      "service_uuids": [],
+      "tx_power": null
+    },
+    {
+      "address": "F3:8C:87:05:82:DC",
+      "local_name": null,
+      "manufacturer_data": {
+        "76": "12020001"
+      },
+      "match_reasons": [],
+      "name": "Unknown",
+      "normalized_address": "f3:8c:87:05:82:dc",
+      "platform_data": [
+        "/org/bluez/hci0/dev_F3_8C_87_05_82_DC",
+        "{'Address': 'F3:8C:87:05:82:DC', 'AddressType': 'random', 'Alias': 'F3-8C-87-05-82-DC', 'Paired': False, 'Bonded': False, 'Trusted': False, 'Blocked': False, 'LegacyPairing': False, 'RSSI': -60, 'Connected': False, 'UUIDs': [], 'Adapter': '/org/bluez/hci0', 'ManufacturerData': {76: b'\\x12\\x02\\x00\\x01'}, 'ServicesResolved': False, 'AdvertisingFlags': b'\\x00'}"
+      ],
+      "rssi": -60,
+      "service_data": {},
+      "service_uuids": [],
+      "tx_power": null
+    }
+  ],
+  "candidate_devices": [
+    {
+      "address": "7E:D0:5B:F9:66:73",
+      "local_name": null,
+      "manufacturer_data": {
+        "76": "160800149601eb1464fc"
+      },
+      "match_reasons": [],
+      "name": "Unknown",
+      "normalized_address": "7e:d0:5b:f9:66:73",
+      "platform_data": [
+        "/org/bluez/hci0/dev_7E_D0_5B_F9_66_73",
+        "{'Address': '7E:D0:5B:F9:66:73', 'AddressType': 'random', 'Alias': '7E-D0-5B-F9-66-73', 'Paired': False, 'Bonded': False, 'Trusted': False, 'Blocked': False, 'LegacyPairing': False, 'RSSI': -38, 'Connected': False, 'UUIDs': [], 'Adapter': '/org/bluez/hci0', 'ManufacturerData': {76: b'\\x16\\x08\\x00\\x14\\x96\\x01\\xeb\\x14d\\xfc'}, 'ServicesResolved': False, 'AdvertisingFlags': b'\\x1a'}"
+      ],
+      "rssi": -38,
+      "service_data": {},
+      "service_uuids": [],
+      "tx_power": null
+    },
+    {
+      "address": "5C:F7:62:8C:57:DC",
+      "local_name": null,
+      "manufacturer_data": {
+        "76": "1006421d7dac5b68"
+      },
+      "match_reasons": [],
+      "name": "Unknown",
+      "normalized_address": "5c:f7:62:8c:57:dc",
+      "platform_data": [
+        "/org/bluez/hci0/dev_5C_F7_62_8C_57_DC",
+        "{'Address': '5C:F7:62:8C:57:DC', 'AddressType': 'random', 'Alias': '5C-F7-62-8C-57-DC', 'Paired': False, 'Bonded': False, 'Trusted': False, 'Blocked': False, 'LegacyPairing': False, 'RSSI': -38, 'Connected': False, 'UUIDs': [], 'Adapter': '/org/bluez/hci0', 'ManufacturerData': {76: b'\\x10\\x06B\\x1d}\\xac[h'}, 'ServicesResolved': False, 'AdvertisingFlags': b'\\x1a', 'TxPower': 12}"
+      ],
+      "rssi": -38,
+      "service_data": {},
+      "service_uuids": [],
+      "tx_power": 12
+    },
+    {
+      "address": "4B:A9:46:DC:63:33",
+      "local_name": null,
+      "manufacturer_data": {
+        "76": "0c0e089c831e7a791057ab7d142a3bb51006471db5b91908"
+      },
+      "match_reasons": [],
+      "name": "Unknown",
+      "normalized_address": "4b:a9:46:dc:63:33",
+      "platform_data": [
+        "/org/bluez/hci0/dev_4B_A9_46_DC_63_33",
+        "{'Address': '4B:A9:46:DC:63:33', 'AddressType': 'random', 'Alias': '4B-A9-46-DC-63-33', 'Paired': False, 'Bonded': False, 'Trusted': False, 'Blocked': False, 'LegacyPairing': False, 'RSSI': -38, 'Connected': False, 'UUIDs': [], 'Adapter': '/org/bluez/hci0', 'ManufacturerData': {76: b'\\x0c\\x0e\\x08\\x9c\\x83\\x1ezy\\x10W\\xab}\\x14*;\\xb5\\x10\\x06G\\x1d\\xb5\\xb9\\x19\\x08'}, 'ServicesResolved': False, 'AdvertisingFlags': b'\\x1a'}"
+      ],
+      "rssi": -38,
+      "service_data": {},
+      "service_uuids": [],
+      "tx_power": null
+    },
+    {
+      "address": "49:60:D9:2A:6F:F1",
+      "local_name": null,
+      "manufacturer_data": {
+        "76": "0c0e089c831e7a791057ab7d142a3bb51006471db5b91908"
+      },
+      "match_reasons": [],
+      "name": "Unknown",
+      "normalized_address": "49:60:d9:2a:6f:f1",
+      "platform_data": [
+        "/org/bluez/hci0/dev_49_60_D9_2A_6F_F1",
+        "{'Address': '49:60:D9:2A:6F:F1', 'AddressType': 'random', 'Alias': '49-60-D9-2A-6F-F1', 'Paired': False, 'Bonded': False, 'Trusted': False, 'Blocked': False, 'LegacyPairing': False, 'RSSI': -38, 'Connected': False, 'UUIDs': [], 'Adapter': '/org/bluez/hci0', 'ManufacturerData': {76: b'\\x0c\\x0e\\x08\\x9c\\x83\\x1ezy\\x10W\\xab}\\x14*;\\xb5\\x10\\x06G\\x1d\\xb5\\xb9\\x19\\x08'}, 'ServicesResolved': False, 'AdvertisingFlags': b'\\x1a'}"
+      ],
+      "rssi": -38,
+      "service_data": {},
+      "service_uuids": [],
+      "tx_power": null
+    },
+    {
+      "address": "EE:F1:CD:98:69:82",
+      "local_name": null,
+      "manufacturer_data": {
+        "76": "12020001"
+      },
+      "match_reasons": [],
+      "name": "Unknown",
+      "normalized_address": "ee:f1:cd:98:69:82",
+      "platform_data": [
+        "/org/bluez/hci0/dev_EE_F1_CD_98_69_82",
+        "{'Address': 'EE:F1:CD:98:69:82', 'AddressType': 'random', 'Alias': 'EE-F1-CD-98-69-82', 'Paired': False, 'Bonded': False, 'Trusted': False, 'Blocked': False, 'LegacyPairing': False, 'RSSI': -38, 'Connected': False, 'UUIDs': [], 'Adapter': '/org/bluez/hci0', 'ManufacturerData': {76: b'\\x12\\x02\\x00\\x01'}, 'ServicesResolved': False, 'AdvertisingFlags': b'\\x00'}"
+      ],
+      "rssi": -38,
+      "service_data": {},
+      "service_uuids": [],
+      "tx_power": null
+    }
+  ],
+  "captured_at": "2026-03-17T11:36:33.133755+00:00",
+  "matched_devices": [],
+  "profile": "Tansu",
+  "scan_timeout_seconds": 15.0,
+  "target_addresses": [],
+  "target_names": [
+    "soundlogic",
+    "okok",
+    "chipsea",
+    "bodyfatscale"
+  ]
+}

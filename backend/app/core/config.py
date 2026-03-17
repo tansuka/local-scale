@@ -25,6 +25,8 @@ class Settings:
     session_timeout_seconds: int
     replay_delay_seconds: float
     ble_scan_timeout_seconds: float
+    ble_connect_timeout_seconds: float
+    ble_notify_capture_seconds: float
     seed_demo_data: bool
     target_scale_names: tuple[str, ...]
     target_scale_addresses: tuple[str, ...]
@@ -92,6 +94,12 @@ def get_settings() -> Settings:
         ),
         ble_scan_timeout_seconds=float(
             os.getenv("LOCAL_SCALE_BLE_SCAN_TIMEOUT_SECONDS", "15")
+        ),
+        ble_connect_timeout_seconds=float(
+            os.getenv("LOCAL_SCALE_BLE_CONNECT_TIMEOUT_SECONDS", "10")
+        ),
+        ble_notify_capture_seconds=float(
+            os.getenv("LOCAL_SCALE_BLE_NOTIFY_CAPTURE_SECONDS", "12")
         ),
         seed_demo_data=env != "target"
         and os.getenv("LOCAL_SCALE_SEED_DEMO_DATA", "1") != "0",

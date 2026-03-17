@@ -19,7 +19,18 @@ function isDecoderPendingMessage(message?: string | null): boolean {
   return !!message?.toLowerCase().includes("protocol decoding still needs a packet capture");
 }
 
+function isProtocolCaptureMessage(message?: string | null): boolean {
+  const lowered = message?.toLowerCase() ?? "";
+  return (
+    lowered.includes("protocol capture saved") ||
+    lowered.includes("direct ble connection did not complete")
+  );
+}
+
 function displayStatus(session: WeighSession | null): string {
+  if (isProtocolCaptureMessage(session?.error_message) && session?.status === "failed") {
+    return "protocol capture";
+  }
   if (isDecoderPendingMessage(session?.error_message) && session?.status === "failed") {
     return "discovery ready";
   }
@@ -27,6 +38,9 @@ function displayStatus(session: WeighSession | null): string {
 }
 
 function displayStatusTone(session: WeighSession | null): string {
+  if (isProtocolCaptureMessage(session?.error_message) && session?.status === "failed") {
+    return "info";
+  }
   if (isDecoderPendingMessage(session?.error_message) && session?.status === "failed") {
     return "info";
   }
@@ -34,6 +48,9 @@ function displayStatusTone(session: WeighSession | null): string {
 }
 
 function statusCopy(session: WeighSession | null): string {
+  if (isProtocolCaptureMessage(session?.error_message) && session?.status === "failed") {
+    return "The scale was found and a protocol capture was saved for analysis.";
+  }
   if (isDecoderPendingMessage(session?.error_message) && session?.status === "failed") {
     return "Bluetooth discovery is working. Packet decoding on the MiniPC target is still pending.";
   }
@@ -45,6 +62,12 @@ function liveErrorTitle(message?: string | null): string {
     return "Live capture note";
   }
   const lowered = message.toLowerCase();
+  if (lowered.includes("protocol capture saved")) {
+    return "Protocol capture saved";
+  }
+  if (lowered.includes("direct ble connection did not complete")) {
+    return "Scale connection incomplete";
+  }
   if (lowered.includes("protocol decoding still needs a packet capture")) {
     return "Decoder setup still needed";
   }
@@ -70,6 +93,16 @@ export function LiveSessionCard({
   const captureFile = typeof details?.capture_file === "string" ? details.capture_file : null;
   const scanTimeoutSeconds =
     typeof details?.scan_timeout_seconds === "number" ? details.scan_timeout_seconds : null;
+  const targetConnectionStatus =
+    typeof details?.target_connection_status === "string" ? details.target_connection_status : null;
+  const targetServiceCount =
+    typeof details?.target_service_count === "number" ? details.target_service_count : null;
+  const notificationPacketCount =
+    typeof details?.notification_packet_count === "number"
+      ? details.notification_packet_count
+      : null;
+  const targetConnectionError =
+    typeof details?.target_connection_error === "string" ? details.target_connection_error : null;
   const targetAddresses = Array.isArray(details?.target_addresses)
     ? (details?.target_addresses as string[])
     : [];
@@ -111,6 +144,12 @@ export function LiveSessionCard({
             {captureFile ? <p>Capture saved to {captureFile}</p> : null}
             {scanTimeoutSeconds ? <p>Scan window: {scanTimeoutSeconds} seconds</p> : null}
             {targetAddresses.length > 0 ? <p>Target address: {targetAddresses.join(", ")}</p> : null}
+            {targetConnectionStatus ? <p>Target connection: {targetConnectionStatus}</p> : null}
+            {targetServiceCount !== null ? <p>GATT services discovered: {targetServiceCount}</p> : null}
+            {notificationPacketCount !== null ? (
+              <p>Notification packets captured: {notificationPacketCount}</p>
+            ) : null}
+            {targetConnectionError ? <p>Connection note: {targetConnectionError}</p> : null}
             {discoveredDevices.length > 0 ? (
               <>
                 <p>Matched devices</p>
