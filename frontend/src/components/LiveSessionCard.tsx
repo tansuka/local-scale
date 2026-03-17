@@ -15,6 +15,48 @@ const STATUS_COPY: Record<string, string> = {
   failed: "The session did not complete.",
 };
 
+function isDecoderPendingMessage(message?: string | null): boolean {
+  return !!message?.toLowerCase().includes("protocol decoding still needs a packet capture");
+}
+
+function displayStatus(session: WeighSession | null): string {
+  if (isDecoderPendingMessage(session?.error_message) && session?.status === "failed") {
+    return "discovery ready";
+  }
+  return session?.status ?? "idle";
+}
+
+function displayStatusTone(session: WeighSession | null): string {
+  if (isDecoderPendingMessage(session?.error_message) && session?.status === "failed") {
+    return "info";
+  }
+  return session?.status ?? "idle";
+}
+
+function statusCopy(session: WeighSession | null): string {
+  if (isDecoderPendingMessage(session?.error_message) && session?.status === "failed") {
+    return "Bluetooth discovery is working. Packet decoding on the MiniPC target is still pending.";
+  }
+  return session ? STATUS_COPY[session.status] ?? session.status : "No active weigh session.";
+}
+
+function liveErrorTitle(message?: string | null): string {
+  if (!message) {
+    return "Live capture note";
+  }
+  const lowered = message.toLowerCase();
+  if (lowered.includes("protocol decoding still needs a packet capture")) {
+    return "Decoder setup still needed";
+  }
+  if (lowered.includes("no bluetooth adapter")) {
+    return "Bluetooth adapter not available";
+  }
+  if (lowered.includes("bluetooth is not available")) {
+    return "Bluetooth is unavailable";
+  }
+  return "Live capture note";
+}
+
 export function LiveSessionCard({
   session,
   selectedProfile,
@@ -22,7 +64,10 @@ export function LiveSessionCard({
   onStart,
   details,
 }: LiveSessionCardProps) {
-  const copy = session ? STATUS_COPY[session.status] ?? session.status : "No active weigh session.";
+  const copy = statusCopy(session);
+  const shownStatus = displayStatus(session);
+  const shownStatusTone = displayStatusTone(session);
+  const captureFile = typeof details?.capture_file === "string" ? details.capture_file : null;
   const discoveredDevices = Array.isArray(details?.discovered_devices)
     ? (details?.discovered_devices as Array<{ name?: string; address?: string }>)
     : [];
@@ -39,12 +84,13 @@ export function LiveSessionCard({
         >
           {loading ? "Starting..." : "Start Weigh-In"}
         </button>
-        <div className={`status-pill ${session?.status ?? "idle"}`}>{session?.status ?? "idle"}</div>
+        <div className={`status-pill ${shownStatusTone}`}>{shownStatus}</div>
         <p className="muted compact-copy">{copy}</p>
         {session?.error_message ? (
           <div className="alert-card">
-            <strong>Live capture note</strong>
+            <strong>{liveErrorTitle(session.error_message)}</strong>
             <p>{session.error_message}</p>
+            {captureFile ? <p>Capture saved to {captureFile}</p> : null}
             {discoveredDevices.length > 0 ? (
               <ul className="device-list">
                 {discoveredDevices.map((device) => (

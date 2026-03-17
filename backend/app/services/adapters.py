@@ -125,6 +125,50 @@ class ReplayAdapter(ScaleAdapter):
 class LiveBleAdapter(ScaleAdapter):
     def __init__(self, settings: Settings) -> None:
         self._target_names = settings.target_scale_names
+        self._capture_dir = settings.ble_capture_dir
+
+    @staticmethod
+    def _hex_payload_map(values: dict[int, bytes] | None) -> dict[str, str]:
+        if not values:
+            return {}
+        return {str(key): value.hex() for key, value in values.items()}
+
+    @classmethod
+    def _serialize_match(
+        cls,
+        device: Any,
+        advertisement_data: Any | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "name": device.name or "Unknown",
+            "address": device.address,
+            "rssi": getattr(device, "rssi", None),
+        }
+        if advertisement_data is not None:
+            payload["local_name"] = getattr(advertisement_data, "local_name", None)
+            payload["service_uuids"] = list(getattr(advertisement_data, "service_uuids", []) or [])
+            payload["service_data"] = {
+                str(key): (
+                    value.hex() if isinstance(value, (bytes, bytearray)) else str(value)
+                )
+                for key, value in (getattr(advertisement_data, "service_data", {}) or {}).items()
+            }
+            payload["manufacturer_data"] = cls._hex_payload_map(
+                getattr(advertisement_data, "manufacturer_data", None)
+            )
+            payload["tx_power"] = getattr(advertisement_data, "tx_power", None)
+            payload["platform_data"] = [
+                item.hex() if isinstance(item, (bytes, bytearray)) else str(item)
+                for item in (getattr(advertisement_data, "platform_data", []) or [])
+            ]
+        return payload
+
+    def _write_capture(self, payload: dict[str, Any]) -> Path:
+        self._capture_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        capture_path = self._capture_dir / f"ble-scan-{stamp}.json"
+        capture_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
+        return capture_path
 
     async def capture_measurement(
         self,
@@ -136,19 +180,38 @@ class LiveBleAdapter(ScaleAdapter):
         except ImportError as exc:  # pragma: no cover - depends on runtime
             raise ScaleAdapterError("Bleak is not installed in this environment.") from exc
 
-        devices = await BleakScanner.discover(timeout=8.0)
-        matches = [
-            {
-                "name": device.name or "Unknown",
-                "address": device.address,
-                "rssi": getattr(device, "rssi", None),
-            }
-            for device in devices
-            if any(token.lower() in (device.name or "").lower() for token in self._target_names)
-        ]
+        raw_devices: list[dict[str, Any]]
+        matches: list[dict[str, Any]]
+        try:
+            discovered = await BleakScanner.discover(timeout=8.0, return_adv=True)
+            raw_devices = []
+            matches = []
+            for device, advertisement_data in discovered.values():
+                serialized = self._serialize_match(device, advertisement_data)
+                raw_devices.append(serialized)
+                if any(token.lower() in (device.name or "").lower() for token in self._target_names):
+                    matches.append(serialized)
+        except TypeError:
+            devices = await BleakScanner.discover(timeout=8.0)
+            raw_devices = [self._serialize_match(device) for device in devices]
+            matches = [
+                serialized
+                for device, serialized in zip(devices, raw_devices, strict=False)
+                if any(token.lower() in (device.name or "").lower() for token in self._target_names)
+            ]
+
+        capture_payload = {
+            "captured_at": datetime.now(timezone.utc).isoformat(),
+            "profile": profile.name,
+            "target_names": list(self._target_names),
+            "matched_devices": matches,
+            "all_devices": raw_devices,
+        }
+        capture_path = self._write_capture(capture_payload)
         details = {
             "profile": profile.name,
             "discovered_devices": matches,
+            "capture_file": str(capture_path),
         }
         raise ScaleAdapterError(
             "Live Bluetooth discovery is wired up, but protocol decoding still needs a packet capture from the MiniPC target.",

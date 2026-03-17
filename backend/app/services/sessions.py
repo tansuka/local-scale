@@ -19,6 +19,22 @@ from app.services.events import EventBroker
 from app.services.metrics import normalize_measurement
 
 
+def _friendly_session_error_message(exc: Exception) -> str:
+    message = str(exc).strip() or exc.__class__.__name__
+    lowered = message.lower()
+    if "no bluetooth adapters found" in lowered:
+        return (
+            "No Bluetooth adapter was found on this machine. "
+            "Check Bluetooth passthrough in the VM and confirm Debian can see the adapter."
+        )
+    if "bluetooth" in lowered and "not available" in lowered:
+        return (
+            "Bluetooth is not available right now. "
+            "Make sure the adapter is attached to the VM and the Bluetooth service is running."
+        )
+    return message
+
+
 class SessionManager:
     def __init__(
         self,
@@ -126,6 +142,24 @@ class SessionManager:
                         "type": "session.updated",
                         "session": WeighSessionRead.model_validate(session).model_dump(mode="json"),
                         "details": exc.details,
+                    }
+                )
+        except Exception as exc:
+            session = get_session(db, session_id)
+            if session is not None:
+                session.status = "failed"
+                session.completed_at = datetime.now(timezone.utc)
+                session.error_message = _friendly_session_error_message(exc)
+                db.commit()
+                db.refresh(session)
+                await self._events.broadcast(
+                    {
+                        "type": "session.updated",
+                        "session": WeighSessionRead.model_validate(session).model_dump(mode="json"),
+                        "details": {
+                            "error_type": exc.__class__.__name__,
+                            "raw_error": str(exc),
+                        },
                     }
                 )
         finally:

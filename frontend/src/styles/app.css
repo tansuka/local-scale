@@ -144,6 +144,10 @@ select {
   background: rgba(220, 89, 89, 0.22);
 }
 
+.status-pill.info {
+  background: color-mix(in srgb, #5fa8ff 28%, rgba(255, 255, 255, 0.1));
+}
+
 .profile-switcher {
   display: flex;
   align-items: center;

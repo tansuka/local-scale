@@ -16,6 +16,7 @@ class Settings:
     env: str
     api_prefix: str
     database_url: str
+    data_root: Path
     adapter_mode: str
     replay_fixture_path: Path
     import_fixture_path: Path
@@ -25,6 +26,7 @@ class Settings:
     replay_delay_seconds: float
     seed_demo_data: bool
     target_scale_names: tuple[str, ...]
+    ble_capture_dir: Path
 
 
 @lru_cache(maxsize=1)
@@ -63,6 +65,7 @@ def get_settings() -> Settings:
         env=env,
         api_prefix="/api",
         database_url=database_url,
+        data_root=data_root,
         adapter_mode=adapter_mode,
         replay_fixture_path=Path(
             os.getenv(
@@ -88,5 +91,8 @@ def get_settings() -> Settings:
         and os.getenv("LOCAL_SCALE_SEED_DEMO_DATA", "1") != "0",
         target_scale_names=tuple(
             part.strip() for part in target_names.split(",") if part.strip()
+        ),
+        ble_capture_dir=Path(
+            os.getenv("LOCAL_SCALE_BLE_CAPTURE_DIR", data_root / "ble-captures")
         ),
     )

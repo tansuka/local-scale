@@ -39,4 +39,4 @@ sudo systemctl enable --now local-scale
 
 ## Bluetooth Reality Check
 
-The live adapter can already discover likely OKOK-compatible devices, but it still needs a real packet capture from the MiniPC to finish the Soundlogic/OKOK decoder. Until that capture is added, keep local development in replay mode and use the target for discovery and protocol logging.
+The live adapter can already discover likely OKOK-compatible devices, but it still needs a real packet capture from the MiniPC to finish the Soundlogic/OKOK decoder. Each live scan now writes a JSON capture under `LOCAL_SCALE_BLE_CAPTURE_DIR` or, by default, `<LOCAL_SCALE_DATA_DIR>/ble-captures/`. Use the target for discovery and protocol logging, then feed one of those captures back into decoder work.
