@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
 from abc import ABC, abstractmethod
@@ -124,8 +125,23 @@ class ReplayAdapter(ScaleAdapter):
 
 class LiveBleAdapter(ScaleAdapter):
     def __init__(self, settings: Settings) -> None:
-        self._target_names = settings.target_scale_names
+        self._target_names = tuple(token.lower() for token in settings.target_scale_names)
+        self._target_addresses = {
+            normalized
+            for raw in settings.target_scale_addresses
+            if (normalized := self._normalize_address(raw)) is not None
+        }
         self._capture_dir = settings.ble_capture_dir
+        self._scan_timeout_seconds = settings.ble_scan_timeout_seconds
+
+    @staticmethod
+    def _normalize_address(value: str | None) -> str | None:
+        if not value:
+            return None
+        compact = "".join(char for char in value if char.isalnum()).lower()
+        if len(compact) != 12:
+            return value.strip().lower() or None
+        return ":".join(compact[index : index + 2] for index in range(0, 12, 2))
 
     @staticmethod
     def _hex_payload_map(values: dict[int, bytes] | None) -> dict[str, str]:
@@ -133,16 +149,71 @@ class LiveBleAdapter(ScaleAdapter):
             return {}
         return {str(key): value.hex() for key, value in values.items()}
 
+    @staticmethod
+    def _extract_rssi(device: Any, advertisement_data: Any | None = None) -> int | None:
+        for source in (advertisement_data, device):
+            if source is None:
+                continue
+            rssi = getattr(source, "rssi", None)
+            if isinstance(rssi, int):
+                return rssi
+
+        platform_data = getattr(advertisement_data, "platform_data", None) or []
+        for item in platform_data:
+            candidate = item
+            if isinstance(item, str) and item.startswith("{") and item.endswith("}"):
+                try:
+                    candidate = ast.literal_eval(item)
+                except (ValueError, SyntaxError):
+                    candidate = item
+            if isinstance(candidate, dict) and isinstance(candidate.get("RSSI"), int):
+                return candidate["RSSI"]
+        return None
+
+    def _match_reasons(self, payload: dict[str, Any]) -> list[str]:
+        reasons: list[str] = []
+        normalized_address = self._normalize_address(payload.get("address"))
+        if normalized_address and normalized_address in self._target_addresses:
+            reasons.append("target address")
+
+        searchable_names = [
+            str(payload.get("name") or "").lower(),
+            str(payload.get("local_name") or "").lower(),
+        ]
+        if any(token in field for token in self._target_names for field in searchable_names if field):
+            reasons.append("target name")
+        return reasons
+
+    def _candidate_score(self, payload: dict[str, Any]) -> tuple[int, int]:
+        reasons = self._match_reasons(payload)
+        score = 0
+        if "target address" in reasons:
+            score += 1000
+        if "target name" in reasons:
+            score += 500
+        rssi = payload.get("rssi")
+        if isinstance(rssi, int):
+            score += 200 + rssi
+        if payload.get("manufacturer_data"):
+            score += 40
+        if payload.get("service_data"):
+            score += 20
+        if payload.get("service_uuids"):
+            score += 10
+        return score, int(rssi) if isinstance(rssi, int) else -999
+
     @classmethod
     def _serialize_match(
         cls,
         device: Any,
         advertisement_data: Any | None = None,
     ) -> dict[str, Any]:
+        normalized_address = cls._normalize_address(getattr(device, "address", None))
         payload: dict[str, Any] = {
             "name": device.name or "Unknown",
             "address": device.address,
-            "rssi": getattr(device, "rssi", None),
+            "normalized_address": normalized_address,
+            "rssi": cls._extract_rssi(device, advertisement_data),
         }
         if advertisement_data is not None:
             payload["local_name"] = getattr(advertisement_data, "local_name", None)
@@ -183,35 +254,53 @@ class LiveBleAdapter(ScaleAdapter):
         raw_devices: list[dict[str, Any]]
         matches: list[dict[str, Any]]
         try:
-            discovered = await BleakScanner.discover(timeout=8.0, return_adv=True)
+            discovered = await BleakScanner.discover(
+                timeout=self._scan_timeout_seconds,
+                return_adv=True,
+            )
             raw_devices = []
             matches = []
             for device, advertisement_data in discovered.values():
                 serialized = self._serialize_match(device, advertisement_data)
+                serialized["match_reasons"] = self._match_reasons(serialized)
                 raw_devices.append(serialized)
-                if any(token.lower() in (device.name or "").lower() for token in self._target_names):
+                if serialized["match_reasons"]:
                     matches.append(serialized)
         except TypeError:
-            devices = await BleakScanner.discover(timeout=8.0)
+            devices = await BleakScanner.discover(timeout=self._scan_timeout_seconds)
             raw_devices = [self._serialize_match(device) for device in devices]
+            for serialized in raw_devices:
+                serialized["match_reasons"] = self._match_reasons(serialized)
             matches = [
                 serialized
                 for device, serialized in zip(devices, raw_devices, strict=False)
-                if any(token.lower() in (device.name or "").lower() for token in self._target_names)
+                if serialized["match_reasons"]
             ]
+
+        candidate_devices = sorted(
+            raw_devices,
+            key=self._candidate_score,
+            reverse=True,
+        )[:5]
 
         capture_payload = {
             "captured_at": datetime.now(timezone.utc).isoformat(),
             "profile": profile.name,
             "target_names": list(self._target_names),
+            "target_addresses": sorted(self._target_addresses),
+            "scan_timeout_seconds": self._scan_timeout_seconds,
             "matched_devices": matches,
+            "candidate_devices": candidate_devices,
             "all_devices": raw_devices,
         }
         capture_path = self._write_capture(capture_payload)
         details = {
             "profile": profile.name,
             "discovered_devices": matches,
+            "candidate_devices": candidate_devices,
             "capture_file": str(capture_path),
+            "scan_timeout_seconds": self._scan_timeout_seconds,
+            "target_addresses": sorted(self._target_addresses),
         }
         raise ScaleAdapterError(
             "Live Bluetooth discovery is wired up, but protocol decoding still needs a packet capture from the MiniPC target.",

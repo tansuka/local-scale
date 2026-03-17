@@ -24,8 +24,10 @@ class Settings:
     cors_origins: tuple[str, ...]
     session_timeout_seconds: int
     replay_delay_seconds: float
+    ble_scan_timeout_seconds: float
     seed_demo_data: bool
     target_scale_names: tuple[str, ...]
+    target_scale_addresses: tuple[str, ...]
     ble_capture_dir: Path
 
 
@@ -59,6 +61,7 @@ def get_settings() -> Settings:
         "LOCAL_SCALE_TARGET_NAMES",
         "Soundlogic,OKOK,Chipsea,BodyFatScale",
     )
+    target_addresses = os.getenv("LOCAL_SCALE_TARGET_ADDRESSES", "")
 
     return Settings(
         app_name="Local Scale",
@@ -87,10 +90,16 @@ def get_settings() -> Settings:
         replay_delay_seconds=float(
             os.getenv("LOCAL_SCALE_REPLAY_DELAY_SECONDS", "1.75")
         ),
+        ble_scan_timeout_seconds=float(
+            os.getenv("LOCAL_SCALE_BLE_SCAN_TIMEOUT_SECONDS", "15")
+        ),
         seed_demo_data=env != "target"
         and os.getenv("LOCAL_SCALE_SEED_DEMO_DATA", "1") != "0",
         target_scale_names=tuple(
             part.strip() for part in target_names.split(",") if part.strip()
+        ),
+        target_scale_addresses=tuple(
+            part.strip() for part in target_addresses.split(",") if part.strip()
         ),
         ble_capture_dir=Path(
             os.getenv("LOCAL_SCALE_BLE_CAPTURE_DIR", data_root / "ble-captures")

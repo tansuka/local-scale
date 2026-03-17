@@ -68,8 +68,26 @@ export function LiveSessionCard({
   const shownStatus = displayStatus(session);
   const shownStatusTone = displayStatusTone(session);
   const captureFile = typeof details?.capture_file === "string" ? details.capture_file : null;
+  const scanTimeoutSeconds =
+    typeof details?.scan_timeout_seconds === "number" ? details.scan_timeout_seconds : null;
+  const targetAddresses = Array.isArray(details?.target_addresses)
+    ? (details?.target_addresses as string[])
+    : [];
   const discoveredDevices = Array.isArray(details?.discovered_devices)
-    ? (details?.discovered_devices as Array<{ name?: string; address?: string }>)
+    ? (details?.discovered_devices as Array<{
+        name?: string;
+        address?: string;
+        rssi?: number | null;
+        match_reasons?: string[];
+      }>)
+    : [];
+  const candidateDevices = Array.isArray(details?.candidate_devices)
+    ? (details?.candidate_devices as Array<{
+        name?: string;
+        address?: string;
+        rssi?: number | null;
+        match_reasons?: string[];
+      }>)
     : [];
 
   return (
@@ -91,14 +109,39 @@ export function LiveSessionCard({
             <strong>{liveErrorTitle(session.error_message)}</strong>
             <p>{session.error_message}</p>
             {captureFile ? <p>Capture saved to {captureFile}</p> : null}
+            {scanTimeoutSeconds ? <p>Scan window: {scanTimeoutSeconds} seconds</p> : null}
+            {targetAddresses.length > 0 ? <p>Target address: {targetAddresses.join(", ")}</p> : null}
             {discoveredDevices.length > 0 ? (
-              <ul className="device-list">
-                {discoveredDevices.map((device) => (
-                  <li key={`${device.address}-${device.name}`}>
-                    {device.name} <span>{device.address}</span>
-                  </li>
-                ))}
-              </ul>
+              <>
+                <p>Matched devices</p>
+                <ul className="device-list">
+                  {discoveredDevices.map((device) => (
+                    <li key={`${device.address}-${device.name}`}>
+                      {device.name} <span>{device.address}</span>
+                      {typeof device.rssi === "number" ? <span>RSSI {device.rssi}</span> : null}
+                      {device.match_reasons?.length ? (
+                        <span>{device.match_reasons.join(", ")}</span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+            {!discoveredDevices.length && candidateDevices.length > 0 ? (
+              <>
+                <p>Closest candidates from this scan</p>
+                <ul className="device-list">
+                  {candidateDevices.map((device) => (
+                    <li key={`${device.address}-${device.name}`}>
+                      {device.name} <span>{device.address}</span>
+                      {typeof device.rssi === "number" ? <span>RSSI {device.rssi}</span> : null}
+                      {device.match_reasons?.length ? (
+                        <span>{device.match_reasons.join(", ")}</span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </>
             ) : null}
           </div>
         ) : null}
