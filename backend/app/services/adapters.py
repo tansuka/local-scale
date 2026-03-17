@@ -511,6 +511,43 @@ class LiveBleAdapter(ScaleAdapter):
             "selected_candidate": selected_candidate,
         }
 
+    @staticmethod
+    def _advertisement_fingerprint(event: dict[str, Any]) -> tuple[Any, ...]:
+        manufacturer_data = tuple(
+            sorted((str(key), str(value)) for key, value in (event.get("manufacturer_data") or {}).items())
+        )
+        service_data = tuple(
+            sorted((str(key), str(value)) for key, value in (event.get("service_data") or {}).items())
+        )
+        service_uuids = tuple(str(item) for item in (event.get("service_uuids") or []))
+        return (
+            str(event.get("normalized_address") or event.get("address") or ""),
+            manufacturer_data,
+            service_data,
+            service_uuids,
+        )
+
+    @classmethod
+    def _has_two_matching_target_packets(
+        cls,
+        advertisement_history: list[dict[str, Any]],
+    ) -> bool:
+        if len(advertisement_history) < 2:
+            return False
+
+        analysis = cls._analyze_advertisement_history(advertisement_history)
+        selected_candidate = analysis.get("selected_candidate")
+        if selected_candidate is not None and int(selected_candidate.get("count", 0)) >= 2:
+            return True
+
+        counts: dict[tuple[Any, ...], int] = {}
+        for event in advertisement_history:
+            fingerprint = cls._advertisement_fingerprint(event)
+            counts[fingerprint] = counts.get(fingerprint, 0) + 1
+            if counts[fingerprint] >= 2:
+                return True
+        return False
+
     async def _scan_once(
         self,
         scanner_cls: Any,
@@ -524,6 +561,7 @@ class LiveBleAdapter(ScaleAdapter):
         matched_targets: dict[str, tuple[dict[str, Any], Any]] = {}
         advertisement_history: list[dict[str, Any]] = []
         sequence_number = 0
+        enough_target_packets = asyncio.Event()
 
         def detection_callback(device: Any, advertisement_data: Any) -> None:
             nonlocal sequence_number
@@ -541,6 +579,8 @@ class LiveBleAdapter(ScaleAdapter):
                         sequence_number=sequence_number,
                     )
                 )
+                if self._has_two_matching_target_packets(advertisement_history):
+                    enough_target_packets.set()
 
         try:
             scanner = self._build_scanner(scanner_cls, detection_callback)
@@ -548,7 +588,12 @@ class LiveBleAdapter(ScaleAdapter):
             await scanner.start()
             scanner_running = True
             try:
-                await asyncio.sleep(self._scan_timeout_seconds)
+                await asyncio.wait_for(
+                    enough_target_packets.wait(),
+                    timeout=self._scan_timeout_seconds,
+                )
+            except TimeoutError:
+                pass
             finally:
                 if scanner_running:
                     await scanner.stop()
@@ -633,6 +678,8 @@ class LiveBleAdapter(ScaleAdapter):
                 matched_targets[device_key] = (merged_payload, device)
 
             advertisement_history.extend(round_history)
+            if self._has_two_matching_target_packets(advertisement_history):
+                break
             if round_number >= self._scan_rounds:
                 break
             await asyncio.sleep(self._scan_pause_seconds)

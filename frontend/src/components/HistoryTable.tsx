@@ -45,6 +45,7 @@ export function HistoryTable({
             <tr>
               <th>Date</th>
               <th>Weight</th>
+              <th>Impedance</th>
               <th>Fat</th>
               <th>Water</th>
               <th>Status</th>
@@ -54,10 +55,15 @@ export function HistoryTable({
           <tbody>
             {measurements.map((measurement) => {
               const pending = measurement.assignment_state !== "confirmed";
+              const impedanceOhm =
+                typeof measurement.raw_payload_json?.impedance_ohm === "number"
+                  ? measurement.raw_payload_json.impedance_ohm
+                  : null;
               return (
                 <tr key={measurement.id}>
                   <td>{formatDateTime(measurement.measured_at)}</td>
                   <td>{measurement.weight_kg} kg</td>
+                  <td>{impedanceOhm !== null ? `${impedanceOhm} ohm` : "—"}</td>
                   <td>{measurement.fat_pct ?? "—"}%</td>
                   <td>{measurement.water_pct ?? "—"}%</td>
                   <td>

@@ -150,7 +150,7 @@ def test_analyze_advertisement_history_selects_single_compact_candidate():
 
 def test_discover_targets_merges_target_history(monkeypatch, tmp_path: Path):
     adapter = LiveBleAdapter(build_settings(tmp_path))
-    adapter._scan_rounds = 2
+    adapter._scan_rounds = 4
     device = SimpleNamespace(address="41:06:4A:9D:15:1E", name=None)
     match_payload = {
         "address": "41:06:4A:9D:15:1E",
@@ -159,16 +159,36 @@ def test_discover_targets_merges_target_history(monkeypatch, tmp_path: Path):
         "match_reasons": ["target address"],
         "rssi": -58,
     }
+    compact_history_entry_round_1 = {
+        "address": "41:06:4A:9D:15:1E",
+        "normalized_address": "41:06:4a:9d:15:1e",
+        "manufacturer_data": {"24256": "1cfb138808082541064a9d151e"},
+        "service_data": {},
+        "service_uuids": [],
+        "round": 1,
+        "sequence": 1,
+        "received_at": datetime(2026, 3, 17, 15, 43, 36, tzinfo=timezone.utc).isoformat(),
+    }
+    compact_history_entry_round_2 = {
+        "address": "41:06:4A:9D:15:1E",
+        "normalized_address": "41:06:4a:9d:15:1e",
+        "manufacturer_data": {"24256": "1cfb138808082541064a9d151e"},
+        "service_data": {},
+        "service_uuids": [],
+        "round": 2,
+        "sequence": 1,
+        "received_at": datetime(2026, 3, 17, 15, 43, 46, tzinfo=timezone.utc).isoformat(),
+    }
     rounds = [
         (
             [match_payload],
             [(match_payload, device)],
-            [{"normalized_address": "41:06:4a:9d:15:1e", "round": 1, "sequence": 1}],
+            [compact_history_entry_round_1],
         ),
         (
             [match_payload],
             [(match_payload, device)],
-            [{"normalized_address": "41:06:4a:9d:15:1e", "round": 2, "sequence": 1}],
+            [compact_history_entry_round_2],
         ),
     ]
     observed_rounds: list[int] = []
@@ -189,3 +209,4 @@ def test_discover_targets_merges_target_history(monkeypatch, tmp_path: Path):
     assert len(matches) == 1
     assert len(matched_records) == 1
     assert [item["round"] for item in advertisement_history] == [1, 2]
+    assert adapter._has_two_matching_target_packets(advertisement_history) is True
