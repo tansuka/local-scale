@@ -125,6 +125,29 @@ def test_analyze_advertisement_history_selects_stable_chipsea_weight():
     assert analysis["selected_candidate"]["count"] == 2
 
 
+def test_analyze_advertisement_history_selects_single_compact_candidate():
+    normalized_address = "41:06:4a:9d:15:1e"
+    history = [
+        {
+            "round": 2,
+            "sequence": 1,
+            "received_at": datetime(2026, 3, 17, 15, 23, 32, tzinfo=timezone.utc).isoformat(),
+            "address": "41:06:4A:9D:15:1E",
+            "normalized_address": normalized_address,
+            "manufacturer_data": {"23744": "1cfb138808082541064a9d151e"},
+            "match_reasons": ["target address"],
+        }
+    ]
+
+    analysis = LiveBleAdapter._analyze_advertisement_history(history)
+
+    assert analysis["parsed_candidate_count"] == 1
+    assert analysis["selected_candidate"] is not None
+    assert analysis["selected_candidate"]["parser"] == "chipsea_compact_adv_v1"
+    assert analysis["selected_candidate"]["weight_kg"] == 74.2
+    assert analysis["selected_candidate"]["samples"][0]["impedance_ohm"] == 463
+
+
 def test_discover_targets_merges_target_history(monkeypatch, tmp_path: Path):
     adapter = LiveBleAdapter(build_settings(tmp_path))
     adapter._scan_rounds = 2

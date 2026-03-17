@@ -401,6 +401,54 @@ class LiveBleAdapter(ScaleAdapter):
         return parsed_candidates
 
     @classmethod
+    def _parse_chipsea_compact_event(
+        cls,
+        event: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        normalized_address = cls._normalize_address(event.get("address"))
+        expected_mac = cls._chipsea_mac_bytes(normalized_address)
+        parsed_candidates: list[dict[str, Any]] = []
+
+        for company_id_raw, payload_hex in (event.get("manufacturer_data") or {}).items():
+            try:
+                company_id = int(str(company_id_raw))
+                payload = bytes.fromhex(str(payload_hex))
+            except (TypeError, ValueError):
+                continue
+
+            if len(payload) != 13 or expected_mac is None:
+                continue
+            mac_bytes = payload[-6:]
+            if mac_bytes != expected_mac:
+                continue
+
+            weight_kg = round((company_id >> 4) / 20.0, 2)
+            if not 20.0 <= weight_kg <= 250.0:
+                continue
+
+            impedance_ohm = int.from_bytes(payload[0:2], byteorder="big") >> 4
+            if not 100 <= impedance_ohm <= 1500:
+                continue
+
+            parsed_candidates.append(
+                {
+                    "parser": "chipsea_compact_adv_v1",
+                    "received_at": event.get("received_at"),
+                    "round": event.get("round"),
+                    "sequence": event.get("sequence"),
+                    "address": event.get("address"),
+                    "normalized_address": normalized_address,
+                    "company_id": company_id,
+                    "weight_kg": weight_kg,
+                    "impedance_ohm": impedance_ohm,
+                    "mac_matches": True,
+                    "payload_hex": payload.hex(),
+                }
+            )
+
+        return parsed_candidates
+
+    @classmethod
     def _analyze_advertisement_history(
         cls,
         advertisement_history: list[dict[str, Any]],
@@ -408,6 +456,7 @@ class LiveBleAdapter(ScaleAdapter):
         parsed_candidates: list[dict[str, Any]] = []
         for event in advertisement_history:
             parsed_candidates.extend(cls._parse_chipsea_broadcast_event(event))
+            parsed_candidates.extend(cls._parse_chipsea_compact_event(event))
 
         grouped: dict[tuple[str, float], dict[str, Any]] = {}
         for candidate in parsed_candidates:
@@ -438,13 +487,27 @@ class LiveBleAdapter(ScaleAdapter):
             key=lambda bucket: (int(bucket["count"]), str(bucket.get("latest_received_at") or "")),
             reverse=True,
         )
+        strong_single_candidates = sorted(
+            (
+                bucket
+                for bucket in grouped.values()
+                if bucket["count"] >= 1
+                and bucket["mac_matches"]
+                and str(bucket.get("parser")) == "chipsea_compact_adv_v1"
+            ),
+            key=lambda bucket: (int(bucket["count"]), str(bucket.get("latest_received_at") or "")),
+            reverse=True,
+        )
         selected_candidate = stable_candidates[0] if stable_candidates else None
+        if selected_candidate is None and strong_single_candidates:
+            selected_candidate = strong_single_candidates[0]
 
         return {
             "target_event_count": len(advertisement_history),
             "parsed_candidate_count": len(parsed_candidates),
             "parsed_candidates": parsed_candidates[:20],
             "stable_candidates": stable_candidates[:10],
+            "strong_single_candidates": strong_single_candidates[:10],
             "selected_candidate": selected_candidate,
         }
 
@@ -862,6 +925,7 @@ class LiveBleAdapter(ScaleAdapter):
                 "capture_mode": "advertisement",
                 "parser": candidate.get("parser"),
                 "sample_count": candidate.get("count"),
+                "impedance_ohm": candidate.get("impedance_ohm"),
                 "samples": list(candidate.get("samples", []) or []),
             },
             "source_metric_map": {
