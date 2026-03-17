@@ -266,74 +266,252 @@ class LiveBleAdapter(ScaleAdapter):
 
         return merged
 
+    @staticmethod
+    def _serialize_advertisement_event(
+        payload: dict[str, Any],
+        *,
+        round_number: int,
+        sequence_number: int,
+    ) -> dict[str, Any]:
+        return {
+            "round": round_number,
+            "sequence": sequence_number,
+            "received_at": datetime.now(timezone.utc).isoformat(),
+            "address": payload.get("address"),
+            "normalized_address": payload.get("normalized_address"),
+            "name": payload.get("name"),
+            "local_name": payload.get("local_name"),
+            "rssi": payload.get("rssi"),
+            "tx_power": payload.get("tx_power"),
+            "match_reasons": list(payload.get("match_reasons", []) or []),
+            "manufacturer_data": dict(payload.get("manufacturer_data", {}) or {}),
+            "service_data": dict(payload.get("service_data", {}) or {}),
+            "service_uuids": list(payload.get("service_uuids", []) or []),
+        }
+
+    @staticmethod
+    def _build_scanner(scanner_cls: Any, detection_callback: Any) -> Any:
+        scanner_options = (
+            {
+                "detection_callback": detection_callback,
+                "scanning_mode": "active",
+                "bluez": {"filters": {"DuplicateData": True}},
+            },
+            {
+                "detection_callback": detection_callback,
+                "scanning_mode": "active",
+            },
+            {
+                "detection_callback": detection_callback,
+            },
+        )
+        last_error: Exception | None = None
+        for option in scanner_options:
+            try:
+                return scanner_cls(**option)
+            except TypeError as exc:
+                last_error = exc
+        if last_error is not None:
+            raise last_error
+        return scanner_cls(detection_callback=detection_callback)
+
+    @staticmethod
+    def _chipsea_mac_bytes(normalized_address: str | None) -> bytes | None:
+        if not normalized_address:
+            return None
+        try:
+            return bytes.fromhex(normalized_address.replace(":", ""))
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _chipsea_decimal_divisor(properties: int) -> float | None:
+        precision_mode = (properties >> 1) & 0b11
+        if precision_mode == 0:
+            return 100.0
+        if precision_mode == 1:
+            return 1.0
+        if precision_mode == 2:
+            return 10.0
+        return None
+
+    @classmethod
+    def _chipsea_weight_kg(cls, raw_weight: int, properties: int) -> float | None:
+        divisor = cls._chipsea_decimal_divisor(properties)
+        if divisor is None:
+            return None
+
+        unit_mode = (properties >> 3) & 0b11
+        if unit_mode in {0, 1}:
+            return round(raw_weight / divisor, 2)
+        if unit_mode == 2:
+            return round((raw_weight / divisor) * 0.45359237, 2)
+        return None
+
+    @classmethod
+    def _parse_chipsea_broadcast_event(
+        cls,
+        event: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        normalized_address = cls._normalize_address(event.get("address"))
+        expected_mac = cls._chipsea_mac_bytes(normalized_address)
+        parsed_candidates: list[dict[str, Any]] = []
+
+        for company_id_raw, payload_hex in (event.get("manufacturer_data") or {}).items():
+            try:
+                company_id = int(str(company_id_raw))
+                payload = bytes.fromhex(str(payload_hex))
+            except (TypeError, ValueError):
+                continue
+
+            if company_id not in {0xFFF0, 0xF0FF}:
+                continue
+            if len(payload) < 18:
+                continue
+
+            properties = payload[1]
+            raw_weight = int.from_bytes(payload[2:4], byteorder="little")
+            weight_kg = cls._chipsea_weight_kg(raw_weight, properties)
+            if weight_kg is None:
+                continue
+
+            mac_bytes = payload[12:18]
+            mac_matches = (
+                expected_mac is None
+                or mac_bytes == expected_mac
+                or mac_bytes[::-1] == expected_mac
+            )
+            parsed_candidates.append(
+                {
+                    "parser": "chipsea_broadcast_v0_3",
+                    "received_at": event.get("received_at"),
+                    "round": event.get("round"),
+                    "sequence": event.get("sequence"),
+                    "address": event.get("address"),
+                    "normalized_address": normalized_address,
+                    "company_id": company_id,
+                    "properties": properties,
+                    "weight_raw": raw_weight,
+                    "weight_kg": weight_kg,
+                    "mac_matches": mac_matches,
+                    "payload_hex": payload.hex(),
+                }
+            )
+
+        return parsed_candidates
+
+    @classmethod
+    def _analyze_advertisement_history(
+        cls,
+        advertisement_history: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        parsed_candidates: list[dict[str, Any]] = []
+        for event in advertisement_history:
+            parsed_candidates.extend(cls._parse_chipsea_broadcast_event(event))
+
+        grouped: dict[tuple[str, float], dict[str, Any]] = {}
+        for candidate in parsed_candidates:
+            key = (str(candidate.get("parser")), float(candidate["weight_kg"]))
+            bucket = grouped.setdefault(
+                key,
+                {
+                    "parser": candidate["parser"],
+                    "weight_kg": candidate["weight_kg"],
+                    "count": 0,
+                    "latest_received_at": candidate.get("received_at"),
+                    "mac_matches": True,
+                    "samples": [],
+                },
+            )
+            bucket["count"] += 1
+            bucket["latest_received_at"] = candidate.get("received_at")
+            bucket["mac_matches"] = bool(bucket["mac_matches"]) and bool(candidate.get("mac_matches"))
+            if len(bucket["samples"]) < 5:
+                bucket["samples"].append(candidate)
+
+        stable_candidates = sorted(
+            (
+                bucket
+                for bucket in grouped.values()
+                if bucket["count"] >= 2 and bucket["mac_matches"]
+            ),
+            key=lambda bucket: (int(bucket["count"]), str(bucket.get("latest_received_at") or "")),
+            reverse=True,
+        )
+        selected_candidate = stable_candidates[0] if stable_candidates else None
+
+        return {
+            "target_event_count": len(advertisement_history),
+            "parsed_candidate_count": len(parsed_candidates),
+            "parsed_candidates": parsed_candidates[:20],
+            "stable_candidates": stable_candidates[:10],
+            "selected_candidate": selected_candidate,
+        }
+
     async def _scan_once(
         self,
         scanner_cls: Any,
+        round_number: int,
     ) -> tuple[
         list[dict[str, Any]],
         list[tuple[dict[str, Any], Any]],
-        dict[str, Any] | None,
+        list[dict[str, Any]],
     ]:
         seen_devices: dict[str, dict[str, Any]] = {}
         matched_targets: dict[str, tuple[dict[str, Any], Any]] = {}
-        match_event = asyncio.Event()
-        live_protocol_capture: dict[str, Any] | None = None
-        target_record: tuple[dict[str, Any], Any] | None = None
+        advertisement_history: list[dict[str, Any]] = []
+        sequence_number = 0
 
         def detection_callback(device: Any, advertisement_data: Any) -> None:
+            nonlocal sequence_number
             serialized = self._serialize_match(device, advertisement_data)
             serialized["match_reasons"] = self._match_reasons(serialized)
             device_key = self._device_key(serialized, f"detected-{len(seen_devices)}")
             seen_devices[device_key] = serialized
             if serialized["match_reasons"]:
+                sequence_number += 1
                 matched_targets[device_key] = (serialized, device)
-                match_event.set()
+                advertisement_history.append(
+                    self._serialize_advertisement_event(
+                        serialized,
+                        round_number=round_number,
+                        sequence_number=sequence_number,
+                    )
+                )
 
         try:
-            scanner = scanner_cls(detection_callback=detection_callback)
+            scanner = self._build_scanner(scanner_cls, detection_callback)
             scanner_running = False
             await scanner.start()
             scanner_running = True
             try:
-                await asyncio.wait_for(match_event.wait(), timeout=self._scan_timeout_seconds)
-            except TimeoutError:
-                pass
-            else:
-                if matched_targets:
-                    target_record = max(
-                        matched_targets.values(),
-                        key=lambda record: self._candidate_score(record[0]),
-                    )
+                await asyncio.sleep(self._scan_timeout_seconds)
             finally:
                 if scanner_running:
                     await scanner.stop()
-            if target_record is not None:
-                target_payload, target_device = target_record
-                connection_targets: list[tuple[str, Any]] = [("device", target_device)]
-                normalized_address = self._normalize_address(target_payload.get("address"))
-                if normalized_address:
-                    connection_targets.append(("address", normalized_address))
-                live_protocol_capture = await self._capture_target_protocol(
-                    target_device,
-                    target_payload,
-                    connection_targets=connection_targets,
-                    max_attempts=1,
-                )
             if seen_devices:
                 return (
                     list(seen_devices.values()),
                     list(matched_targets.values()),
-                    live_protocol_capture,
+                    advertisement_history,
                 )
         except TypeError:
             devices = await scanner_cls.discover(timeout=self._scan_timeout_seconds)
             round_payloads = [self._serialize_match(device) for device in devices]
             round_matches: list[tuple[dict[str, Any], Any]] = []
+            fallback_history: list[dict[str, Any]] = []
             for device, serialized in zip(devices, round_payloads, strict=False):
                 serialized["match_reasons"] = self._match_reasons(serialized)
                 if serialized["match_reasons"]:
                     round_matches.append((serialized, device))
-            return round_payloads, round_matches, None
+                    fallback_history.append(
+                        self._serialize_advertisement_event(
+                            serialized,
+                            round_number=round_number,
+                            sequence_number=len(fallback_history) + 1,
+                        )
+                    )
+            return round_payloads, round_matches, fallback_history
         except Exception:  # pragma: no cover - fallback for scanner backends that reject callbacks
             discovered = await scanner_cls.discover(
                 timeout=self._scan_timeout_seconds,
@@ -341,15 +519,23 @@ class LiveBleAdapter(ScaleAdapter):
             )
             round_payloads = []
             round_matches = []
+            fallback_history = []
             for device, advertisement_data in discovered.values():
                 serialized = self._serialize_match(device, advertisement_data)
                 serialized["match_reasons"] = self._match_reasons(serialized)
                 round_payloads.append(serialized)
                 if serialized["match_reasons"]:
                     round_matches.append((serialized, device))
-            return round_payloads, round_matches, None
+                    fallback_history.append(
+                        self._serialize_advertisement_event(
+                            serialized,
+                            round_number=round_number,
+                            sequence_number=len(fallback_history) + 1,
+                        )
+                    )
+            return round_payloads, round_matches, fallback_history
 
-        return list(seen_devices.values()), list(matched_targets.values()), live_protocol_capture
+        return list(seen_devices.values()), list(matched_targets.values()), advertisement_history
 
     async def _discover_targets(
         self,
@@ -359,18 +545,16 @@ class LiveBleAdapter(ScaleAdapter):
         list[dict[str, Any]],
         list[tuple[dict[str, Any], Any]],
         int,
-        dict[str, Any] | None,
+        list[dict[str, Any]],
     ]:
         seen_devices: dict[str, dict[str, Any]] = {}
         matched_targets: dict[str, tuple[dict[str, Any], Any]] = {}
         rounds_completed = 0
-        protocol_capture: dict[str, Any] | None = None
+        advertisement_history: list[dict[str, Any]] = []
 
         for round_number in range(1, self._scan_rounds + 1):
             rounds_completed = round_number
-            round_payloads, round_matches, live_round_protocol_capture = await self._scan_once(
-                scanner_cls
-            )
+            round_payloads, round_matches, round_history = await self._scan_once(scanner_cls, round_number)
 
             for index, payload in enumerate(round_payloads):
                 device_key = self._device_key(payload, f"round-{round_number}-device-{index}")
@@ -385,10 +569,7 @@ class LiveBleAdapter(ScaleAdapter):
                 merged_payload = seen_devices.get(device_key, payload)
                 matched_targets[device_key] = (merged_payload, device)
 
-            if live_round_protocol_capture is not None:
-                protocol_capture = live_round_protocol_capture
-            if protocol_capture is not None and protocol_capture.get("connected"):
-                break
+            advertisement_history.extend(round_history)
             if round_number >= self._scan_rounds:
                 break
             await asyncio.sleep(self._scan_pause_seconds)
@@ -404,7 +585,7 @@ class LiveBleAdapter(ScaleAdapter):
             key=lambda record: self._candidate_score(record[0]),
             reverse=True,
         )
-        return raw_devices, matched_payloads, matched_records, rounds_completed, protocol_capture
+        return raw_devices, matched_payloads, matched_records, rounds_completed, advertisement_history
 
     @staticmethod
     def _iter_services(services: Any) -> list[Any]:
@@ -661,6 +842,33 @@ class LiveBleAdapter(ScaleAdapter):
             merged["target_device"] = first.get("target_device") or second.get("target_device")
         return merged
 
+    @staticmethod
+    def _measurement_from_advertisement_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
+        measured_at_raw = candidate.get("latest_received_at") or datetime.now(timezone.utc).isoformat()
+        try:
+            measured_at = datetime.fromisoformat(str(measured_at_raw))
+        except ValueError:
+            measured_at = datetime.now(timezone.utc)
+        if measured_at.tzinfo is None:
+            measured_at = measured_at.replace(tzinfo=timezone.utc)
+
+        return {
+            "measured_at": measured_at,
+            "measurement_date": measured_at.date(),
+            "source": "live_advertisement",
+            "weight_kg": float(candidate["weight_kg"]),
+            "raw_payload_json": {
+                "adapter": "live_ble",
+                "capture_mode": "advertisement",
+                "parser": candidate.get("parser"),
+                "sample_count": candidate.get("count"),
+                "samples": list(candidate.get("samples", []) or []),
+            },
+            "source_metric_map": {
+                "weight_kg": str(candidate.get("parser") or "live_advertisement"),
+            },
+        }
+
     @classmethod
     def _serialize_match(
         cls,
@@ -710,9 +918,11 @@ class LiveBleAdapter(ScaleAdapter):
         except ImportError as exc:  # pragma: no cover - depends on runtime
             raise ScaleAdapterError("Bleak is not installed in this environment.") from exc
 
-        raw_devices, matches, matched_targets, scan_rounds_completed, protocol_capture = (
+        raw_devices, matches, matched_targets, scan_rounds_completed, advertisement_history = (
             await self._discover_targets(BleakScanner)
         )
+        advertisement_analysis = self._analyze_advertisement_history(advertisement_history)
+        selected_advertisement_candidate = advertisement_analysis.get("selected_candidate")
 
         candidate_devices = sorted(
             raw_devices,
@@ -720,7 +930,12 @@ class LiveBleAdapter(ScaleAdapter):
             reverse=True,
         )[:5]
 
-        if matched_targets and (protocol_capture is None or not protocol_capture.get("connected")):
+        protocol_capture: dict[str, Any] | None = None
+        if (
+            selected_advertisement_candidate is None
+            and matched_targets
+            and (protocol_capture is None or not protocol_capture.get("connected"))
+        ):
             target_payload, target_device = matched_targets[0]
             fallback_protocol_capture = await self._capture_target_protocol(
                 target_device,
@@ -742,10 +957,21 @@ class LiveBleAdapter(ScaleAdapter):
             "scan_pause_seconds": self._scan_pause_seconds,
             "matched_devices": matches,
             "candidate_devices": candidate_devices,
+            "advertisement_history": advertisement_history,
+            "advertisement_analysis": advertisement_analysis,
             "protocol_capture": protocol_capture,
             "all_devices": raw_devices,
         }
         capture_path = self._write_capture(capture_payload)
+
+        if selected_advertisement_candidate is not None:
+            measurement = self._measurement_from_advertisement_candidate(
+                selected_advertisement_candidate
+            )
+            measurement["raw_payload_json"]["capture_file"] = str(capture_path)
+            measurement["raw_payload_json"]["advertisement_analysis"] = advertisement_analysis
+            return measurement
+
         details = {
             "profile": profile.name,
             "discovered_devices": matches,
@@ -756,6 +982,10 @@ class LiveBleAdapter(ScaleAdapter):
             "scan_rounds_configured": self._scan_rounds,
             "scan_pause_seconds": self._scan_pause_seconds,
             "target_addresses": sorted(self._target_addresses),
+            "target_advertisement_event_count": advertisement_analysis.get("target_event_count", 0),
+            "parsed_advertisement_candidate_count": advertisement_analysis.get(
+                "parsed_candidate_count", 0
+            ),
         }
         message = "Live Bluetooth discovery is wired up, but protocol decoding still needs a packet capture from the MiniPC target."
         if protocol_capture is not None:

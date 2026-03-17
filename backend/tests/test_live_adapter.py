@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -37,10 +38,17 @@ def build_settings(tmp_path: Path) -> Settings:
     )
 
 
-def test_scan_once_stops_scanner_before_connecting(monkeypatch, tmp_path: Path):
+def _chipsea_payload(weight_kg: float, normalized_address: str) -> bytes:
+    raw_weight = int(round(weight_kg * 100))
+    mac_bytes = bytes.fromhex(normalized_address.replace(":", ""))
+    return bytes([0x10, 0x00]) + raw_weight.to_bytes(2, byteorder="little") + bytes(8) + mac_bytes
+
+
+def test_scan_once_collects_target_advertisement_history(tmp_path: Path):
     adapter = LiveBleAdapter(build_settings(tmp_path))
-    device = SimpleNamespace(address="41:06:4A:9D:15:1E", name=None)
-    advertisement_data = SimpleNamespace(
+    adapter._scan_timeout_seconds = 0.0
+    target_device = SimpleNamespace(address="41:06:4A:9D:15:1E", name=None)
+    target_advertisement = SimpleNamespace(
         local_name=None,
         manufacturer_data={21696: bytes.fromhex("1d18138808082541064a9d151e")},
         service_data={},
@@ -49,50 +57,77 @@ def test_scan_once_stops_scanner_before_connecting(monkeypatch, tmp_path: Path):
         platform_data=[],
         rssi=-56,
     )
-    observed: dict[str, object] = {}
+    other_device = SimpleNamespace(address="58:26:AF:72:F2:82", name=None)
+    other_advertisement = SimpleNamespace(
+        local_name=None,
+        manufacturer_data={76: bytes.fromhex("12020001")},
+        service_data={},
+        service_uuids=[],
+        tx_power=None,
+        platform_data=[],
+        rssi=-40,
+    )
 
     class FakeScanner:
         instance: "FakeScanner | None" = None
 
-        def __init__(self, detection_callback):
+        def __init__(self, detection_callback, **_kwargs):
             self._detection_callback = detection_callback
             self.stopped = False
             FakeScanner.instance = self
 
         async def start(self) -> None:
-            self._detection_callback(device, advertisement_data)
+            self._detection_callback(target_device, target_advertisement)
+            self._detection_callback(other_device, other_advertisement)
 
         async def stop(self) -> None:
             self.stopped = True
 
-    async def fake_capture(self, matched_device, matched_payload, **kwargs):
-        observed["scanner_stopped"] = FakeScanner.instance is not None and FakeScanner.instance.stopped
-        observed["matched_device"] = matched_device
-        observed["matched_payload"] = matched_payload
-        observed["connection_targets"] = kwargs["connection_targets"]
-        observed["max_attempts"] = kwargs["max_attempts"]
-        return {"attempted": True, "connected": False, "attempts": []}
+    seen_devices, matched_targets, advertisement_history = asyncio.run(adapter._scan_once(FakeScanner, 1))
 
-    monkeypatch.setattr(LiveBleAdapter, "_capture_target_protocol", fake_capture)
-
-    seen_devices, matched_targets, protocol_capture = asyncio.run(adapter._scan_once(FakeScanner))
-
-    assert len(seen_devices) == 1
+    assert len(seen_devices) == 2
     assert len(matched_targets) == 1
-    assert protocol_capture == {"attempted": True, "connected": False, "attempts": []}
-    assert observed["scanner_stopped"] is True
-    assert observed["matched_device"] is device
-    assert observed["matched_payload"] == matched_targets[0][0]
-    assert observed["connection_targets"] == [
-        ("device", device),
-        ("address", "41:06:4a:9d:15:1e"),
+    assert len(advertisement_history) == 1
+    assert advertisement_history[0]["normalized_address"] == "41:06:4a:9d:15:1e"
+    assert advertisement_history[0]["round"] == 1
+    assert FakeScanner.instance is not None and FakeScanner.instance.stopped is True
+
+
+def test_analyze_advertisement_history_selects_stable_chipsea_weight():
+    normalized_address = "41:06:4a:9d:15:1e"
+    payload = _chipsea_payload(70.25, normalized_address)
+    history = [
+        {
+            "round": 1,
+            "sequence": 1,
+            "received_at": datetime(2026, 3, 17, 14, 0, tzinfo=timezone.utc).isoformat(),
+            "address": "41:06:4A:9D:15:1E",
+            "normalized_address": normalized_address,
+            "manufacturer_data": {str(0xFFF0): payload.hex()},
+            "match_reasons": ["target address"],
+        },
+        {
+            "round": 1,
+            "sequence": 2,
+            "received_at": datetime(2026, 3, 17, 14, 0, 1, tzinfo=timezone.utc).isoformat(),
+            "address": "41:06:4A:9D:15:1E",
+            "normalized_address": normalized_address,
+            "manufacturer_data": {str(0xFFF0): payload.hex()},
+            "match_reasons": ["target address"],
+        },
     ]
-    assert observed["max_attempts"] == 1
+
+    analysis = LiveBleAdapter._analyze_advertisement_history(history)
+
+    assert analysis["parsed_candidate_count"] == 2
+    assert analysis["selected_candidate"] is not None
+    assert analysis["selected_candidate"]["weight_kg"] == 70.25
+    assert analysis["selected_candidate"]["count"] == 2
 
 
-def test_discover_targets_keeps_scanning_after_failed_connect(monkeypatch, tmp_path: Path):
+def test_discover_targets_merges_target_history(monkeypatch, tmp_path: Path):
     adapter = LiveBleAdapter(build_settings(tmp_path))
-    adapter._scan_rounds = 3
+    adapter._scan_rounds = 2
     device = SimpleNamespace(address="41:06:4A:9D:15:1E", name=None)
     match_payload = {
         "address": "41:06:4A:9D:15:1E",
@@ -102,18 +137,26 @@ def test_discover_targets_keeps_scanning_after_failed_connect(monkeypatch, tmp_p
         "rssi": -58,
     }
     rounds = [
-        ([match_payload], [(match_payload, device)], {"attempted": True, "connected": False}),
-        ([match_payload], [(match_payload, device)], {"attempted": True, "connected": True}),
+        (
+            [match_payload],
+            [(match_payload, device)],
+            [{"normalized_address": "41:06:4a:9d:15:1e", "round": 1, "sequence": 1}],
+        ),
+        (
+            [match_payload],
+            [(match_payload, device)],
+            [{"normalized_address": "41:06:4a:9d:15:1e", "round": 2, "sequence": 1}],
+        ),
     ]
     observed_rounds: list[int] = []
 
-    async def fake_scan_once(self, scanner_cls):
-        observed_rounds.append(len(observed_rounds) + 1)
-        return rounds[len(observed_rounds) - 1]
+    async def fake_scan_once(self, scanner_cls, round_number):
+        observed_rounds.append(round_number)
+        return rounds[round_number - 1]
 
     monkeypatch.setattr(LiveBleAdapter, "_scan_once", fake_scan_once)
 
-    raw_devices, matches, matched_records, rounds_completed, protocol_capture = asyncio.run(
+    raw_devices, matches, matched_records, rounds_completed, advertisement_history = asyncio.run(
         adapter._discover_targets(object())
     )
 
@@ -122,4 +165,4 @@ def test_discover_targets_keeps_scanning_after_failed_connect(monkeypatch, tmp_p
     assert len(raw_devices) == 1
     assert len(matches) == 1
     assert len(matched_records) == 1
-    assert protocol_capture == {"attempted": True, "connected": True}
+    assert [item["round"] for item in advertisement_history] == [1, 2]
