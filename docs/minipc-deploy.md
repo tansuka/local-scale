@@ -17,18 +17,18 @@ sudo useradd --system --home /opt/local-scale --shell /usr/sbin/nologin localsca
 
 ## App Deployment
 
-1. Copy the repo to `/opt/local-scale`.
+1. Copy the repo to `/home/scale/local-scale`.
 2. Build the frontend on the target or build locally and copy `frontend/dist`.
 3. Create the backend venv and install the package:
 
 ```bash
-cd /opt/local-scale/backend
+cd /home/scale/local-scale/backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
 ```
 
-4. Copy [deploy/local-scale.env.example](/Users/tansukahyaoglu/Development/local-scale/deploy/local-scale.env.example) to `/etc/local-scale/local-scale.env` and adjust paths.
+4. Copy [deploy/local-scale.env.example](/Users/tansukahyaoglu/Development/local-scale/deploy/local-scale.env.example) to `/etc/local-scale/local-scale.env` and adjust paths if your checkout lives elsewhere.
 5. Install [deploy/local-scale.service](/Users/tansukahyaoglu/Development/local-scale/deploy/local-scale.service) to `/etc/systemd/system/local-scale.service`.
 6. Enable and start the service:
 
