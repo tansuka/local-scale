@@ -299,10 +299,6 @@ class LiveBleAdapter(ScaleAdapter):
                 pass
             else:
                 if matched_targets:
-                    if scanner_running:
-                        await scanner.stop()
-                        scanner_running = False
-                        await asyncio.sleep(0.2)
                     target_payload, target_device = max(
                         matched_targets.values(),
                         key=lambda record: self._candidate_score(record[0]),
@@ -310,6 +306,7 @@ class LiveBleAdapter(ScaleAdapter):
                     live_protocol_capture = await self._capture_target_protocol(
                         target_device,
                         target_payload,
+                        connection_targets=[("device", target_device)],
                     )
             finally:
                 if scanner_running:
@@ -553,6 +550,8 @@ class LiveBleAdapter(ScaleAdapter):
         self,
         device: Any,
         matched_payload: dict[str, Any],
+        *,
+        connection_targets: list[tuple[str, Any]] | None = None,
     ) -> dict[str, Any]:
         try:
             from bleak import BleakClient
@@ -574,10 +573,11 @@ class LiveBleAdapter(ScaleAdapter):
             "attempts": [],
         }
         normalized_address = self._normalize_address(matched_payload.get("address"))
-        connection_targets: list[tuple[str, Any]] = []
-        if normalized_address:
-            connection_targets.append(("address", normalized_address))
-        connection_targets.append(("device", device))
+        if connection_targets is None:
+            connection_targets = []
+            if normalized_address:
+                connection_targets.append(("address", normalized_address))
+            connection_targets.append(("device", device))
 
         for attempt_number in range(1, self._connect_retries + 1):
             attempt_payload: dict[str, Any] = {"attempt": attempt_number}
@@ -629,6 +629,25 @@ class LiveBleAdapter(ScaleAdapter):
                 await asyncio.sleep(self._connect_retry_pause_seconds)
 
         return protocol_capture
+
+    @staticmethod
+    def _merge_protocol_captures(
+        first: dict[str, Any] | None,
+        second: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if first is None:
+            return second
+        if second is None:
+            return first
+
+        merged = dict(second if second.get("connected") or not first.get("connected") else first)
+        merged["attempts"] = [
+            *list(first.get("attempts", []) or []),
+            *list(second.get("attempts", []) or []),
+        ]
+        if not merged.get("target_device"):
+            merged["target_device"] = first.get("target_device") or second.get("target_device")
+        return merged
 
     @classmethod
     def _serialize_match(
@@ -689,9 +708,16 @@ class LiveBleAdapter(ScaleAdapter):
             reverse=True,
         )[:5]
 
-        if protocol_capture is None and matched_targets:
+        if matched_targets and (protocol_capture is None or not protocol_capture.get("connected")):
             target_payload, target_device = matched_targets[0]
-            protocol_capture = await self._capture_target_protocol(target_device, target_payload)
+            fallback_protocol_capture = await self._capture_target_protocol(
+                target_device,
+                target_payload,
+            )
+            protocol_capture = self._merge_protocol_captures(
+                protocol_capture,
+                fallback_protocol_capture,
+            )
 
         capture_payload = {
             "captured_at": datetime.now(timezone.utc).isoformat(),
