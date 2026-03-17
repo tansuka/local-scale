@@ -278,6 +278,7 @@ class LiveBleAdapter(ScaleAdapter):
         matched_targets: dict[str, tuple[dict[str, Any], Any]] = {}
         match_event = asyncio.Event()
         live_protocol_capture: dict[str, Any] | None = None
+        target_record: tuple[dict[str, Any], Any] | None = None
 
         def detection_callback(device: Any, advertisement_data: Any) -> None:
             serialized = self._serialize_match(device, advertisement_data)
@@ -299,19 +300,25 @@ class LiveBleAdapter(ScaleAdapter):
                 pass
             else:
                 if matched_targets:
-                    target_payload, target_device = max(
+                    target_record = max(
                         matched_targets.values(),
                         key=lambda record: self._candidate_score(record[0]),
-                    )
-                    live_protocol_capture = await self._capture_target_protocol(
-                        target_device,
-                        target_payload,
-                        connection_targets=[("device", target_device)],
-                        max_attempts=1,
                     )
             finally:
                 if scanner_running:
                     await scanner.stop()
+            if target_record is not None:
+                target_payload, target_device = target_record
+                connection_targets: list[tuple[str, Any]] = [("device", target_device)]
+                normalized_address = self._normalize_address(target_payload.get("address"))
+                if normalized_address:
+                    connection_targets.append(("address", normalized_address))
+                live_protocol_capture = await self._capture_target_protocol(
+                    target_device,
+                    target_payload,
+                    connection_targets=connection_targets,
+                    max_attempts=1,
+                )
             if seen_devices:
                 return (
                     list(seen_devices.values()),
@@ -576,10 +583,9 @@ class LiveBleAdapter(ScaleAdapter):
         }
         normalized_address = self._normalize_address(matched_payload.get("address"))
         if connection_targets is None:
-            connection_targets = []
+            connection_targets = [("device", device)]
             if normalized_address:
                 connection_targets.append(("address", normalized_address))
-            connection_targets.append(("device", device))
 
         attempt_count = max_attempts or self._connect_retries
 
