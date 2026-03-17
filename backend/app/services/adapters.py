@@ -290,13 +290,19 @@ class LiveBleAdapter(ScaleAdapter):
 
         try:
             scanner = scanner_cls(detection_callback=detection_callback)
+            scanner_running = False
             await scanner.start()
+            scanner_running = True
             try:
                 await asyncio.wait_for(match_event.wait(), timeout=self._scan_timeout_seconds)
             except TimeoutError:
                 pass
             else:
                 if matched_targets:
+                    if scanner_running:
+                        await scanner.stop()
+                        scanner_running = False
+                        await asyncio.sleep(0.2)
                     target_payload, target_device = max(
                         matched_targets.values(),
                         key=lambda record: self._candidate_score(record[0]),
@@ -306,7 +312,8 @@ class LiveBleAdapter(ScaleAdapter):
                         target_payload,
                     )
             finally:
-                await scanner.stop()
+                if scanner_running:
+                    await scanner.stop()
             if seen_devices:
                 return (
                     list(seen_devices.values()),
