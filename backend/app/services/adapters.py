@@ -469,12 +469,15 @@ class LiveBleAdapter(ScaleAdapter):
                     "count": 0,
                     "latest_received_at": candidate.get("received_at"),
                     "mac_matches": True,
+                    "impedance_ohm": candidate.get("impedance_ohm"),
                     "samples": [],
                 },
             )
             bucket["count"] += 1
             bucket["latest_received_at"] = candidate.get("received_at")
             bucket["mac_matches"] = bool(bucket["mac_matches"]) and bool(candidate.get("mac_matches"))
+            if bucket.get("impedance_ohm") is None and candidate.get("impedance_ohm") is not None:
+                bucket["impedance_ohm"] = candidate.get("impedance_ohm")
             if len(bucket["samples"]) < 5:
                 bucket["samples"].append(candidate)
 

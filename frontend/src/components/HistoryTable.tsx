@@ -3,6 +3,59 @@ import { useMemo, useState } from "react";
 import type { Measurement, Profile } from "../lib/types";
 import { formatDateTime } from "../lib/dates";
 
+function asNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function extractImpedanceOhm(measurement: Measurement): number | null {
+  const raw = measurement.raw_payload_json;
+  const topLevel = asNumber(raw?.impedance_ohm);
+  if (topLevel !== null) {
+    return topLevel;
+  }
+
+  const samples = Array.isArray(raw?.samples) ? raw.samples : [];
+  for (const sample of samples) {
+    if (sample && typeof sample === "object") {
+      const sampleImpedance = asNumber((sample as Record<string, unknown>).impedance_ohm);
+      if (sampleImpedance !== null) {
+        return sampleImpedance;
+      }
+    }
+  }
+
+  const advertisementAnalysis =
+    raw?.advertisement_analysis &&
+    typeof raw.advertisement_analysis === "object" &&
+    !Array.isArray(raw.advertisement_analysis)
+      ? (raw.advertisement_analysis as Record<string, unknown>)
+      : null;
+  const selectedCandidate =
+    advertisementAnalysis?.selected_candidate &&
+    typeof advertisementAnalysis.selected_candidate === "object" &&
+    !Array.isArray(advertisementAnalysis.selected_candidate)
+      ? (advertisementAnalysis.selected_candidate as Record<string, unknown>)
+      : null;
+  const selectedSamples = Array.isArray(selectedCandidate?.samples) ? selectedCandidate.samples : [];
+  for (const sample of selectedSamples) {
+    if (sample && typeof sample === "object") {
+      const sampleImpedance = asNumber((sample as Record<string, unknown>).impedance_ohm);
+      if (sampleImpedance !== null) {
+        return sampleImpedance;
+      }
+    }
+  }
+
+  return null;
+}
+
 type HistoryTableProps = {
   measurements: Measurement[];
   profiles: Profile[];
@@ -55,10 +108,7 @@ export function HistoryTable({
           <tbody>
             {measurements.map((measurement) => {
               const pending = measurement.assignment_state !== "confirmed";
-              const impedanceOhm =
-                typeof measurement.raw_payload_json?.impedance_ohm === "number"
-                  ? measurement.raw_payload_json.impedance_ohm
-                  : null;
+              const impedanceOhm = extractImpedanceOhm(measurement);
               return (
                 <tr key={measurement.id}>
                   <td>{formatDateTime(measurement.measured_at)}</td>

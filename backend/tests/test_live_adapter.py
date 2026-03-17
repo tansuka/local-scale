@@ -145,7 +145,30 @@ def test_analyze_advertisement_history_selects_single_compact_candidate():
     assert analysis["selected_candidate"] is not None
     assert analysis["selected_candidate"]["parser"] == "chipsea_compact_adv_v1"
     assert analysis["selected_candidate"]["weight_kg"] == 74.19
+    assert analysis["selected_candidate"]["impedance_ohm"] == 500
     assert analysis["selected_candidate"]["samples"][0]["impedance_ohm"] == 500
+
+
+def test_measurement_from_advertisement_candidate_keeps_impedance():
+    candidate = {
+        "parser": "chipsea_compact_adv_v1",
+        "weight_kg": 74.19,
+        "impedance_ohm": 500,
+        "count": 1,
+        "latest_received_at": datetime(2026, 3, 17, 15, 23, 32, tzinfo=timezone.utc).isoformat(),
+        "samples": [
+            {
+                "parser": "chipsea_compact_adv_v1",
+                "weight_kg": 74.19,
+                "impedance_ohm": 500,
+            }
+        ],
+    }
+
+    measurement = LiveBleAdapter._measurement_from_advertisement_candidate(candidate)
+
+    assert measurement["raw_payload_json"]["impedance_ohm"] == 500
+    assert measurement["raw_payload_json"]["samples"][0]["impedance_ohm"] == 500
 
 
 def test_discover_targets_merges_target_history(monkeypatch, tmp_path: Path):
