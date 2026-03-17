@@ -269,10 +269,15 @@ class LiveBleAdapter(ScaleAdapter):
     async def _scan_once(
         self,
         scanner_cls: Any,
-    ) -> tuple[list[dict[str, Any]], list[tuple[dict[str, Any], Any]]]:
+    ) -> tuple[
+        list[dict[str, Any]],
+        list[tuple[dict[str, Any], Any]],
+        dict[str, Any] | None,
+    ]:
         seen_devices: dict[str, dict[str, Any]] = {}
         matched_targets: dict[str, tuple[dict[str, Any], Any]] = {}
         match_event = asyncio.Event()
+        live_protocol_capture: dict[str, Any] | None = None
 
         def detection_callback(device: Any, advertisement_data: Any) -> None:
             serialized = self._serialize_match(device, advertisement_data)
@@ -290,10 +295,24 @@ class LiveBleAdapter(ScaleAdapter):
                 await asyncio.wait_for(match_event.wait(), timeout=self._scan_timeout_seconds)
             except TimeoutError:
                 pass
+            else:
+                if matched_targets:
+                    target_payload, target_device = max(
+                        matched_targets.values(),
+                        key=lambda record: self._candidate_score(record[0]),
+                    )
+                    live_protocol_capture = await self._capture_target_protocol(
+                        target_device,
+                        target_payload,
+                    )
             finally:
                 await scanner.stop()
             if seen_devices:
-                return list(seen_devices.values()), list(matched_targets.values())
+                return (
+                    list(seen_devices.values()),
+                    list(matched_targets.values()),
+                    live_protocol_capture,
+                )
         except TypeError:
             devices = await scanner_cls.discover(timeout=self._scan_timeout_seconds)
             round_payloads = [self._serialize_match(device) for device in devices]
@@ -302,7 +321,7 @@ class LiveBleAdapter(ScaleAdapter):
                 serialized["match_reasons"] = self._match_reasons(serialized)
                 if serialized["match_reasons"]:
                     round_matches.append((serialized, device))
-            return round_payloads, round_matches
+            return round_payloads, round_matches, None
         except Exception:  # pragma: no cover - fallback for scanner backends that reject callbacks
             discovered = await scanner_cls.discover(
                 timeout=self._scan_timeout_seconds,
@@ -316,21 +335,30 @@ class LiveBleAdapter(ScaleAdapter):
                 round_payloads.append(serialized)
                 if serialized["match_reasons"]:
                     round_matches.append((serialized, device))
-            return round_payloads, round_matches
+            return round_payloads, round_matches, None
 
-        return list(seen_devices.values()), list(matched_targets.values())
+        return list(seen_devices.values()), list(matched_targets.values()), live_protocol_capture
 
     async def _discover_targets(
         self,
         scanner_cls: Any,
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[tuple[dict[str, Any], Any]], int]:
+    ) -> tuple[
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+        list[tuple[dict[str, Any], Any]],
+        int,
+        dict[str, Any] | None,
+    ]:
         seen_devices: dict[str, dict[str, Any]] = {}
         matched_targets: dict[str, tuple[dict[str, Any], Any]] = {}
         rounds_completed = 0
+        protocol_capture: dict[str, Any] | None = None
 
         for round_number in range(1, self._scan_rounds + 1):
             rounds_completed = round_number
-            round_payloads, round_matches = await self._scan_once(scanner_cls)
+            round_payloads, round_matches, live_round_protocol_capture = await self._scan_once(
+                scanner_cls
+            )
 
             for index, payload in enumerate(round_payloads):
                 device_key = self._device_key(payload, f"round-{round_number}-device-{index}")
@@ -345,6 +373,8 @@ class LiveBleAdapter(ScaleAdapter):
                 merged_payload = seen_devices.get(device_key, payload)
                 matched_targets[device_key] = (merged_payload, device)
 
+            if live_round_protocol_capture is not None:
+                protocol_capture = live_round_protocol_capture
             if matched_targets or round_number >= self._scan_rounds:
                 break
             await asyncio.sleep(self._scan_pause_seconds)
@@ -360,7 +390,7 @@ class LiveBleAdapter(ScaleAdapter):
             key=lambda record: self._candidate_score(record[0]),
             reverse=True,
         )
-        return raw_devices, matched_payloads, matched_records, rounds_completed
+        return raw_devices, matched_payloads, matched_records, rounds_completed, protocol_capture
 
     @staticmethod
     def _iter_services(services: Any) -> list[Any]:
@@ -642,8 +672,8 @@ class LiveBleAdapter(ScaleAdapter):
         except ImportError as exc:  # pragma: no cover - depends on runtime
             raise ScaleAdapterError("Bleak is not installed in this environment.") from exc
 
-        raw_devices, matches, matched_targets, scan_rounds_completed = await self._discover_targets(
-            BleakScanner
+        raw_devices, matches, matched_targets, scan_rounds_completed, protocol_capture = (
+            await self._discover_targets(BleakScanner)
         )
 
         candidate_devices = sorted(
@@ -652,8 +682,7 @@ class LiveBleAdapter(ScaleAdapter):
             reverse=True,
         )[:5]
 
-        protocol_capture: dict[str, Any] | None = None
-        if matched_targets:
+        if protocol_capture is None and matched_targets:
             target_payload, target_device = matched_targets[0]
             protocol_capture = await self._capture_target_protocol(target_device, target_payload)
 
