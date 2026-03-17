@@ -387,7 +387,9 @@ class LiveBleAdapter(ScaleAdapter):
 
             if live_round_protocol_capture is not None:
                 protocol_capture = live_round_protocol_capture
-            if matched_targets or round_number >= self._scan_rounds:
+            if protocol_capture is not None and protocol_capture.get("connected"):
+                break
+            if round_number >= self._scan_rounds:
                 break
             await asyncio.sleep(self._scan_pause_seconds)
 

@@ -88,3 +88,38 @@ def test_scan_once_stops_scanner_before_connecting(monkeypatch, tmp_path: Path):
         ("address", "41:06:4a:9d:15:1e"),
     ]
     assert observed["max_attempts"] == 1
+
+
+def test_discover_targets_keeps_scanning_after_failed_connect(monkeypatch, tmp_path: Path):
+    adapter = LiveBleAdapter(build_settings(tmp_path))
+    adapter._scan_rounds = 3
+    device = SimpleNamespace(address="41:06:4A:9D:15:1E", name=None)
+    match_payload = {
+        "address": "41:06:4A:9D:15:1E",
+        "normalized_address": "41:06:4a:9d:15:1e",
+        "name": "Unknown",
+        "match_reasons": ["target address"],
+        "rssi": -58,
+    }
+    rounds = [
+        ([match_payload], [(match_payload, device)], {"attempted": True, "connected": False}),
+        ([match_payload], [(match_payload, device)], {"attempted": True, "connected": True}),
+    ]
+    observed_rounds: list[int] = []
+
+    async def fake_scan_once(self, scanner_cls):
+        observed_rounds.append(len(observed_rounds) + 1)
+        return rounds[len(observed_rounds) - 1]
+
+    monkeypatch.setattr(LiveBleAdapter, "_scan_once", fake_scan_once)
+
+    raw_devices, matches, matched_records, rounds_completed, protocol_capture = asyncio.run(
+        adapter._discover_targets(object())
+    )
+
+    assert observed_rounds == [1, 2]
+    assert rounds_completed == 2
+    assert len(raw_devices) == 1
+    assert len(matches) == 1
+    assert len(matched_records) == 1
+    assert protocol_capture == {"attempted": True, "connected": True}
