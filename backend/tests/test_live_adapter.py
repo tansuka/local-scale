@@ -144,8 +144,8 @@ def test_analyze_advertisement_history_selects_single_compact_candidate():
     assert analysis["parsed_candidate_count"] == 1
     assert analysis["selected_candidate"] is not None
     assert analysis["selected_candidate"]["parser"] == "chipsea_compact_adv_v1"
-    assert analysis["selected_candidate"]["weight_kg"] == 74.2
-    assert analysis["selected_candidate"]["samples"][0]["impedance_ohm"] == 463
+    assert analysis["selected_candidate"]["weight_kg"] == 74.19
+    assert analysis["selected_candidate"]["samples"][0]["impedance_ohm"] == 500
 
 
 def test_discover_targets_merges_target_history(monkeypatch, tmp_path: Path):

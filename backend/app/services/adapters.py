@@ -422,11 +422,11 @@ class LiveBleAdapter(ScaleAdapter):
             if mac_bytes != expected_mac:
                 continue
 
-            weight_kg = round((company_id >> 4) / 20.0, 2)
+            weight_kg = round(int.from_bytes(payload[0:2], byteorder="big") / 100.0, 2)
             if not 20.0 <= weight_kg <= 250.0:
                 continue
 
-            impedance_ohm = int.from_bytes(payload[0:2], byteorder="big") >> 4
+            impedance_ohm = round(int.from_bytes(payload[2:4], byteorder="big") / 10.0)
             if not 100 <= impedance_ohm <= 1500:
                 continue
 
