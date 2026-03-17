@@ -133,7 +133,11 @@ class LiveBleAdapter(ScaleAdapter):
         }
         self._capture_dir = settings.ble_capture_dir
         self._scan_timeout_seconds = settings.ble_scan_timeout_seconds
+        self._scan_rounds = settings.ble_scan_rounds
+        self._scan_pause_seconds = settings.ble_scan_pause_seconds
         self._connect_timeout_seconds = settings.ble_connect_timeout_seconds
+        self._connect_retries = settings.ble_connect_retries
+        self._connect_retry_pause_seconds = settings.ble_connect_retry_pause_seconds
         self._notify_capture_seconds = settings.ble_notify_capture_seconds
 
     @staticmethod
@@ -203,6 +207,134 @@ class LiveBleAdapter(ScaleAdapter):
         if payload.get("service_uuids"):
             score += 10
         return score, int(rssi) if isinstance(rssi, int) else -999
+
+    @staticmethod
+    def _device_key(payload: dict[str, Any], fallback: str) -> str:
+        return str(payload.get("normalized_address") or payload.get("address") or fallback)
+
+    def _merge_device_payload(
+        self,
+        existing: dict[str, Any] | None,
+        payload: dict[str, Any],
+        round_number: int,
+    ) -> dict[str, Any]:
+        if existing is None:
+            merged = dict(payload)
+            merged["seen_count"] = 1
+            merged["seen_rounds"] = [round_number]
+            if isinstance(payload.get("rssi"), int):
+                merged["best_rssi"] = payload["rssi"]
+            return merged
+
+        merged = dict(existing)
+        for key, value in payload.items():
+            if value in (None, "", [], {}):
+                continue
+            merged[key] = value
+
+        merged["seen_count"] = int(existing.get("seen_count", 0)) + 1
+        merged["seen_rounds"] = sorted(
+            {
+                *[
+                    int(value)
+                    for value in existing.get("seen_rounds", [])
+                    if isinstance(value, int | float)
+                ],
+                round_number,
+            }
+        )
+        merged["match_reasons"] = sorted(
+            {
+                *[str(value) for value in existing.get("match_reasons", [])],
+                *[str(value) for value in payload.get("match_reasons", [])],
+            }
+        )
+
+        current_rssi = payload.get("rssi")
+        best_rssi = existing.get("best_rssi")
+        if isinstance(current_rssi, int):
+            merged["last_rssi"] = current_rssi
+            if not isinstance(best_rssi, int) or current_rssi > best_rssi:
+                merged["best_rssi"] = current_rssi
+                merged["rssi"] = current_rssi
+            elif isinstance(best_rssi, int):
+                merged["best_rssi"] = best_rssi
+                merged["rssi"] = best_rssi
+        elif isinstance(best_rssi, int):
+            merged["best_rssi"] = best_rssi
+            merged["rssi"] = best_rssi
+
+        return merged
+
+    async def _scan_once(
+        self,
+        scanner_cls: Any,
+    ) -> tuple[list[dict[str, Any]], list[tuple[dict[str, Any], Any]]]:
+        round_payloads: list[dict[str, Any]] = []
+        matched_targets: list[tuple[dict[str, Any], Any]] = []
+
+        try:
+            discovered = await scanner_cls.discover(
+                timeout=self._scan_timeout_seconds,
+                return_adv=True,
+            )
+            for device, advertisement_data in discovered.values():
+                serialized = self._serialize_match(device, advertisement_data)
+                serialized["match_reasons"] = self._match_reasons(serialized)
+                round_payloads.append(serialized)
+                if serialized["match_reasons"]:
+                    matched_targets.append((serialized, device))
+        except TypeError:
+            devices = await scanner_cls.discover(timeout=self._scan_timeout_seconds)
+            round_payloads = [self._serialize_match(device) for device in devices]
+            for device, serialized in zip(devices, round_payloads, strict=False):
+                serialized["match_reasons"] = self._match_reasons(serialized)
+                if serialized["match_reasons"]:
+                    matched_targets.append((serialized, device))
+
+        return round_payloads, matched_targets
+
+    async def _discover_targets(
+        self,
+        scanner_cls: Any,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[tuple[dict[str, Any], Any]], int]:
+        seen_devices: dict[str, dict[str, Any]] = {}
+        matched_targets: dict[str, tuple[dict[str, Any], Any]] = {}
+        rounds_completed = 0
+
+        for round_number in range(1, self._scan_rounds + 1):
+            rounds_completed = round_number
+            round_payloads, round_matches = await self._scan_once(scanner_cls)
+
+            for index, payload in enumerate(round_payloads):
+                device_key = self._device_key(payload, f"round-{round_number}-device-{index}")
+                seen_devices[device_key] = self._merge_device_payload(
+                    seen_devices.get(device_key),
+                    payload,
+                    round_number,
+                )
+
+            for index, (payload, device) in enumerate(round_matches):
+                device_key = self._device_key(payload, f"round-{round_number}-match-{index}")
+                merged_payload = seen_devices.get(device_key, payload)
+                matched_targets[device_key] = (merged_payload, device)
+
+            if matched_targets or round_number >= self._scan_rounds:
+                break
+            await asyncio.sleep(self._scan_pause_seconds)
+
+        raw_devices = sorted(seen_devices.values(), key=self._candidate_score, reverse=True)
+        matched_payloads = sorted(
+            (payload for payload, _ in matched_targets.values()),
+            key=self._candidate_score,
+            reverse=True,
+        )
+        matched_records = sorted(
+            matched_targets.values(),
+            key=lambda record: self._candidate_score(record[0]),
+            reverse=True,
+        )
+        return raw_devices, matched_payloads, matched_records, rounds_completed
 
     @staticmethod
     def _iter_services(services: Any) -> list[Any]:
@@ -373,34 +505,50 @@ class LiveBleAdapter(ScaleAdapter):
             "attempted": True,
             "target_device": matched_payload,
             "connect_timeout_seconds": self._connect_timeout_seconds,
+            "connect_retries": self._connect_retries,
+            "connect_retry_pause_seconds": self._connect_retry_pause_seconds,
             "notify_capture_seconds": self._notify_capture_seconds,
+            "attempts": [],
         }
-        try:
+
+        for attempt_number in range(1, self._connect_retries + 1):
+            attempt_payload: dict[str, Any] = {"attempt": attempt_number}
             try:
-                client = BleakClient(device, timeout=self._connect_timeout_seconds)
-            except TypeError:  # pragma: no cover - compatibility fallback
-                client = BleakClient(device)
-
-            async with client:
-                protocol_capture["connected"] = bool(getattr(client, "is_connected", False))
                 try:
-                    services = await client.get_services()
-                except Exception:  # pragma: no cover - compatibility fallback
-                    services = getattr(client, "services", None)
-                    if services is None:
-                        raise
+                    client = BleakClient(device, timeout=self._connect_timeout_seconds)
+                except TypeError:  # pragma: no cover - compatibility fallback
+                    client = BleakClient(device)
 
-                serialized_services = await self._serialize_gatt_services(client, services)
-                protocol_capture["service_count"] = len(serialized_services)
-                protocol_capture["services"] = serialized_services
-                protocol_capture["notification_capture"] = await self._capture_notifications(
-                    client,
-                    services,
-                )
-        except Exception as exc:  # pragma: no cover - depends on runtime device behavior
-            protocol_capture["connected"] = False
-            protocol_capture["error_type"] = exc.__class__.__name__
-            protocol_capture["error_message"] = str(exc)
+                async with client:
+                    attempt_payload["connected"] = bool(getattr(client, "is_connected", False))
+                    try:
+                        services = await client.get_services()
+                    except Exception:  # pragma: no cover - compatibility fallback
+                        services = getattr(client, "services", None)
+                        if services is None:
+                            raise
+
+                    serialized_services = await self._serialize_gatt_services(client, services)
+                    notification_capture = await self._capture_notifications(client, services)
+                    attempt_payload["service_count"] = len(serialized_services)
+                    attempt_payload["services"] = serialized_services
+                    attempt_payload["notification_capture"] = notification_capture
+                    protocol_capture["attempts"].append(attempt_payload)
+                    protocol_capture["connected"] = attempt_payload["connected"]
+                    protocol_capture["service_count"] = attempt_payload["service_count"]
+                    protocol_capture["services"] = serialized_services
+                    protocol_capture["notification_capture"] = notification_capture
+                    return protocol_capture
+            except Exception as exc:  # pragma: no cover - depends on runtime device behavior
+                attempt_payload["connected"] = False
+                attempt_payload["error_type"] = exc.__class__.__name__
+                attempt_payload["error_message"] = str(exc)
+                protocol_capture["attempts"].append(attempt_payload)
+                protocol_capture["connected"] = False
+                protocol_capture["error_type"] = exc.__class__.__name__
+                protocol_capture["error_message"] = str(exc)
+                if attempt_number < self._connect_retries:
+                    await asyncio.sleep(self._connect_retry_pause_seconds)
 
         return protocol_capture
 
@@ -453,45 +601,15 @@ class LiveBleAdapter(ScaleAdapter):
         except ImportError as exc:  # pragma: no cover - depends on runtime
             raise ScaleAdapterError("Bleak is not installed in this environment.") from exc
 
-        raw_devices: list[dict[str, Any]]
-        matches: list[dict[str, Any]]
-        matched_targets: list[tuple[dict[str, Any], Any]] = []
-        try:
-            discovered = await BleakScanner.discover(
-                timeout=self._scan_timeout_seconds,
-                return_adv=True,
-            )
-            raw_devices = []
-            matches = []
-            for device, advertisement_data in discovered.values():
-                serialized = self._serialize_match(device, advertisement_data)
-                serialized["match_reasons"] = self._match_reasons(serialized)
-                raw_devices.append(serialized)
-                if serialized["match_reasons"]:
-                    matches.append(serialized)
-                    matched_targets.append((serialized, device))
-        except TypeError:
-            devices = await BleakScanner.discover(timeout=self._scan_timeout_seconds)
-            raw_devices = [self._serialize_match(device) for device in devices]
-            for device, serialized in zip(devices, raw_devices, strict=False):
-                serialized["match_reasons"] = self._match_reasons(serialized)
-                if serialized["match_reasons"]:
-                    matched_targets.append((serialized, device))
-            matches = [
-                serialized
-                for serialized in raw_devices
-                if serialized["match_reasons"]
-            ]
+        raw_devices, matches, matched_targets, scan_rounds_completed = await self._discover_targets(
+            BleakScanner
+        )
 
         candidate_devices = sorted(
             raw_devices,
             key=self._candidate_score,
             reverse=True,
         )[:5]
-        matched_targets.sort(
-            key=lambda record: self._candidate_score(record[0]),
-            reverse=True,
-        )
 
         protocol_capture: dict[str, Any] | None = None
         if matched_targets:
@@ -504,6 +622,9 @@ class LiveBleAdapter(ScaleAdapter):
             "target_names": list(self._target_names),
             "target_addresses": sorted(self._target_addresses),
             "scan_timeout_seconds": self._scan_timeout_seconds,
+            "scan_rounds_configured": self._scan_rounds,
+            "scan_rounds_completed": scan_rounds_completed,
+            "scan_pause_seconds": self._scan_pause_seconds,
             "matched_devices": matches,
             "candidate_devices": candidate_devices,
             "protocol_capture": protocol_capture,
@@ -516,6 +637,9 @@ class LiveBleAdapter(ScaleAdapter):
             "candidate_devices": candidate_devices,
             "capture_file": str(capture_path),
             "scan_timeout_seconds": self._scan_timeout_seconds,
+            "scan_rounds_completed": scan_rounds_completed,
+            "scan_rounds_configured": self._scan_rounds,
+            "scan_pause_seconds": self._scan_pause_seconds,
             "target_addresses": sorted(self._target_addresses),
         }
         message = "Live Bluetooth discovery is wired up, but protocol decoding still needs a packet capture from the MiniPC target."
@@ -539,6 +663,11 @@ class LiveBleAdapter(ScaleAdapter):
                     "Target scale was discovered, but the direct BLE connection did not complete. "
                     "Review the MiniPC capture for GATT details."
                 )
+        elif self._target_addresses:
+            message = (
+                "The configured target scale was not seen during the live scan window. "
+                "Wake the scale and keep it active while the MiniPC is scanning."
+            )
         raise ScaleAdapterError(message, details=details)
 
 

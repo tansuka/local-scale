@@ -27,7 +27,14 @@ function isProtocolCaptureMessage(message?: string | null): boolean {
   );
 }
 
+function isTargetNotSeenMessage(message?: string | null): boolean {
+  return !!message?.toLowerCase().includes("configured target scale was not seen");
+}
+
 function displayStatus(session: WeighSession | null): string {
+  if (isTargetNotSeenMessage(session?.error_message) && session?.status === "failed") {
+    return "target not seen";
+  }
   if (isProtocolCaptureMessage(session?.error_message) && session?.status === "failed") {
     return "protocol capture";
   }
@@ -38,6 +45,9 @@ function displayStatus(session: WeighSession | null): string {
 }
 
 function displayStatusTone(session: WeighSession | null): string {
+  if (isTargetNotSeenMessage(session?.error_message) && session?.status === "failed") {
+    return "info";
+  }
   if (isProtocolCaptureMessage(session?.error_message) && session?.status === "failed") {
     return "info";
   }
@@ -48,6 +58,9 @@ function displayStatusTone(session: WeighSession | null): string {
 }
 
 function statusCopy(session: WeighSession | null): string {
+  if (isTargetNotSeenMessage(session?.error_message) && session?.status === "failed") {
+    return "The configured scale was not seen during the repeated scan window.";
+  }
   if (isProtocolCaptureMessage(session?.error_message) && session?.status === "failed") {
     return "The scale was found and a protocol capture was saved for analysis.";
   }
@@ -67,6 +80,9 @@ function liveErrorTitle(message?: string | null): string {
   }
   if (lowered.includes("direct ble connection did not complete")) {
     return "Scale connection incomplete";
+  }
+  if (lowered.includes("configured target scale was not seen")) {
+    return "Scale not seen yet";
   }
   if (lowered.includes("protocol decoding still needs a packet capture")) {
     return "Decoder setup still needed";
@@ -93,6 +109,10 @@ export function LiveSessionCard({
   const captureFile = typeof details?.capture_file === "string" ? details.capture_file : null;
   const scanTimeoutSeconds =
     typeof details?.scan_timeout_seconds === "number" ? details.scan_timeout_seconds : null;
+  const scanRoundsCompleted =
+    typeof details?.scan_rounds_completed === "number" ? details.scan_rounds_completed : null;
+  const scanRoundsConfigured =
+    typeof details?.scan_rounds_configured === "number" ? details.scan_rounds_configured : null;
   const targetConnectionStatus =
     typeof details?.target_connection_status === "string" ? details.target_connection_status : null;
   const targetServiceCount =
@@ -143,6 +163,11 @@ export function LiveSessionCard({
             <p>{session.error_message}</p>
             {captureFile ? <p>Capture saved to {captureFile}</p> : null}
             {scanTimeoutSeconds ? <p>Scan window: {scanTimeoutSeconds} seconds</p> : null}
+            {scanRoundsCompleted !== null && scanRoundsConfigured !== null ? (
+              <p>
+                Scan rounds: {scanRoundsCompleted} / {scanRoundsConfigured}
+              </p>
+            ) : null}
             {targetAddresses.length > 0 ? <p>Target address: {targetAddresses.join(", ")}</p> : null}
             {targetConnectionStatus ? <p>Target connection: {targetConnectionStatus}</p> : null}
             {targetServiceCount !== null ? <p>GATT services discovered: {targetServiceCount}</p> : null}
