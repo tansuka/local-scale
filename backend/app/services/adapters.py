@@ -307,6 +307,7 @@ class LiveBleAdapter(ScaleAdapter):
                         target_device,
                         target_payload,
                         connection_targets=[("device", target_device)],
+                        max_attempts=1,
                     )
             finally:
                 if scanner_running:
@@ -552,6 +553,7 @@ class LiveBleAdapter(ScaleAdapter):
         matched_payload: dict[str, Any],
         *,
         connection_targets: list[tuple[str, Any]] | None = None,
+        max_attempts: int | None = None,
     ) -> dict[str, Any]:
         try:
             from bleak import BleakClient
@@ -579,7 +581,9 @@ class LiveBleAdapter(ScaleAdapter):
                 connection_targets.append(("address", normalized_address))
             connection_targets.append(("device", device))
 
-        for attempt_number in range(1, self._connect_retries + 1):
+        attempt_count = max_attempts or self._connect_retries
+
+        for attempt_number in range(1, attempt_count + 1):
             attempt_payload: dict[str, Any] = {"attempt": attempt_number}
             for connection_method, connection_target in connection_targets:
                 method_attempt = dict(attempt_payload)
@@ -625,7 +629,7 @@ class LiveBleAdapter(ScaleAdapter):
                     protocol_capture["error_type"] = exc.__class__.__name__
                     protocol_capture["error_message"] = str(exc)
                     protocol_capture["connection_method"] = connection_method
-            if attempt_number < self._connect_retries:
+            if attempt_number < attempt_count:
                 await asyncio.sleep(self._connect_retry_pause_seconds)
 
         return protocol_capture
