@@ -510,45 +510,60 @@ class LiveBleAdapter(ScaleAdapter):
             "notify_capture_seconds": self._notify_capture_seconds,
             "attempts": [],
         }
+        normalized_address = self._normalize_address(matched_payload.get("address"))
+        connection_targets: list[tuple[str, Any]] = []
+        if normalized_address:
+            connection_targets.append(("address", normalized_address))
+        connection_targets.append(("device", device))
 
         for attempt_number in range(1, self._connect_retries + 1):
             attempt_payload: dict[str, Any] = {"attempt": attempt_number}
-            try:
+            for connection_method, connection_target in connection_targets:
+                method_attempt = dict(attempt_payload)
+                method_attempt["connection_method"] = connection_method
+                method_attempt["connection_target"] = (
+                    connection_target
+                    if isinstance(connection_target, str)
+                    else str(getattr(connection_target, "address", connection_target))
+                )
                 try:
-                    client = BleakClient(device, timeout=self._connect_timeout_seconds)
-                except TypeError:  # pragma: no cover - compatibility fallback
-                    client = BleakClient(device)
-
-                async with client:
-                    attempt_payload["connected"] = bool(getattr(client, "is_connected", False))
                     try:
-                        services = await client.get_services()
-                    except Exception:  # pragma: no cover - compatibility fallback
-                        services = getattr(client, "services", None)
-                        if services is None:
-                            raise
+                        client = BleakClient(connection_target, timeout=self._connect_timeout_seconds)
+                    except TypeError:  # pragma: no cover - compatibility fallback
+                        client = BleakClient(connection_target)
 
-                    serialized_services = await self._serialize_gatt_services(client, services)
-                    notification_capture = await self._capture_notifications(client, services)
-                    attempt_payload["service_count"] = len(serialized_services)
-                    attempt_payload["services"] = serialized_services
-                    attempt_payload["notification_capture"] = notification_capture
-                    protocol_capture["attempts"].append(attempt_payload)
-                    protocol_capture["connected"] = attempt_payload["connected"]
-                    protocol_capture["service_count"] = attempt_payload["service_count"]
-                    protocol_capture["services"] = serialized_services
-                    protocol_capture["notification_capture"] = notification_capture
-                    return protocol_capture
-            except Exception as exc:  # pragma: no cover - depends on runtime device behavior
-                attempt_payload["connected"] = False
-                attempt_payload["error_type"] = exc.__class__.__name__
-                attempt_payload["error_message"] = str(exc)
-                protocol_capture["attempts"].append(attempt_payload)
-                protocol_capture["connected"] = False
-                protocol_capture["error_type"] = exc.__class__.__name__
-                protocol_capture["error_message"] = str(exc)
-                if attempt_number < self._connect_retries:
-                    await asyncio.sleep(self._connect_retry_pause_seconds)
+                    async with client:
+                        method_attempt["connected"] = bool(getattr(client, "is_connected", False))
+                        try:
+                            services = await client.get_services()
+                        except Exception:  # pragma: no cover - compatibility fallback
+                            services = getattr(client, "services", None)
+                            if services is None:
+                                raise
+
+                        serialized_services = await self._serialize_gatt_services(client, services)
+                        notification_capture = await self._capture_notifications(client, services)
+                        method_attempt["service_count"] = len(serialized_services)
+                        method_attempt["services"] = serialized_services
+                        method_attempt["notification_capture"] = notification_capture
+                        protocol_capture["attempts"].append(method_attempt)
+                        protocol_capture["connected"] = method_attempt["connected"]
+                        protocol_capture["service_count"] = method_attempt["service_count"]
+                        protocol_capture["services"] = serialized_services
+                        protocol_capture["notification_capture"] = notification_capture
+                        protocol_capture["connection_method"] = connection_method
+                        return protocol_capture
+                except Exception as exc:  # pragma: no cover - depends on runtime device behavior
+                    method_attempt["connected"] = False
+                    method_attempt["error_type"] = exc.__class__.__name__
+                    method_attempt["error_message"] = str(exc)
+                    protocol_capture["attempts"].append(method_attempt)
+                    protocol_capture["connected"] = False
+                    protocol_capture["error_type"] = exc.__class__.__name__
+                    protocol_capture["error_message"] = str(exc)
+                    protocol_capture["connection_method"] = connection_method
+            if attempt_number < self._connect_retries:
+                await asyncio.sleep(self._connect_retry_pause_seconds)
 
         return protocol_capture
 
