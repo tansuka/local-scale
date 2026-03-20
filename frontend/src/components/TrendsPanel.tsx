@@ -73,6 +73,7 @@ export function TrendsPanel({
   const [range, setRange] = useState<RangeKey>("month");
   const [metric, setMetric] = useState<TrendMetricKey>("weight_kg");
   const elementRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<echarts.ECharts | null>(null);
 
   const filteredCharts = useMemo(() => {
     if (!charts) {
@@ -104,12 +105,38 @@ export function TrendsPanel({
   const selectedMetric = METRIC_OPTIONS.find((option) => option.key === metric) ?? METRIC_OPTIONS[0];
   const seriesPoints = filteredCharts?.series[metric] ?? [];
   const hasSeries = seriesPoints.length > 0;
+  const numericValues = seriesPoints
+    .map((point) => point.value)
+    .filter((value): value is number => Number.isFinite(value));
+  const yAxisBounds =
+    numericValues.length > 0
+      ? (() => {
+          const minValue = Math.min(...numericValues);
+          const maxValue = Math.max(...numericValues);
+          if (selectedMetric.key === "weight_kg") {
+            return {
+              min: Math.max(0, Math.floor(minValue - 10)),
+              max: Math.ceil(maxValue + 10),
+            };
+          }
+          const span = Math.max(maxValue - minValue, 1);
+          const padding = Math.max(1, Math.ceil(span * 0.15));
+          return {
+            min: Math.floor(minValue - padding),
+            max: Math.ceil(maxValue + padding),
+          };
+        })()
+      : null;
 
   useEffect(() => {
     if (!elementRef.current || !hasSeries) {
+      chartRef.current?.dispose();
+      chartRef.current = null;
       return undefined;
     }
+    chartRef.current?.dispose();
     const chart = echarts.init(elementRef.current);
+    chartRef.current = chart;
     chart.setOption({
       backgroundColor: "transparent",
       tooltip: {
@@ -134,6 +161,8 @@ export function TrendsPanel({
       },
       yAxis: {
         type: "value",
+        min: yAxisBounds?.min,
+        max: yAxisBounds?.max,
         axisLabel: {
           color: "#e8dcc7",
           formatter: (value: number) =>
@@ -161,8 +190,11 @@ export function TrendsPanel({
     return () => {
       observer?.disconnect();
       chart.dispose();
+      if (chartRef.current === chart) {
+        chartRef.current = null;
+      }
     };
-  }, [hasSeries, selectedMetric.label, selectedMetric.unit, seriesPoints]);
+  }, [hasSeries, selectedMetric.key, selectedMetric.label, selectedMetric.unit, seriesPoints, yAxisBounds]);
 
   return (
     <div className="tab-content">

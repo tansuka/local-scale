@@ -1,8 +1,10 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 
+const setOptionMock = vi.fn();
+
 vi.mock("echarts", () => ({
   init: () => ({
-    setOption() {},
+    setOption: setOptionMock,
     resize() {},
     dispose() {},
   }),
@@ -60,7 +62,7 @@ const charts = {
   series: {
     weight_kg: [{ measured_at: "2026-03-18T12:00:00Z", value: 72.5 }],
     fat_pct: [{ measured_at: "2026-03-18T12:00:00Z", value: 18.4 }],
-    water_pct: [{ measured_at: "2026-03-18T12:00:00Z", value: 56.2 }],
+    water_pct: [],
     muscle_pct: [{ measured_at: "2026-03-18T12:00:00Z", value: 45.3 }],
     skeletal_muscle_pct: [{ measured_at: "2026-03-18T12:00:00Z", value: 40.1 }],
     visceral_fat: [{ measured_at: "2026-03-18T12:00:00Z", value: 8 }],
@@ -70,6 +72,10 @@ const charts = {
 };
 
 describe("TrendsPanel", () => {
+  beforeEach(() => {
+    setOptionMock.mockClear();
+  });
+
   it("defaults to weight and switches headings when the metric changes", () => {
     render(
       <TrendsPanel
@@ -84,9 +90,34 @@ describe("TrendsPanel", () => {
 
     expect(screen.getByRole("heading", { name: "Weight over time" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "All weigh-ins in this range" })).toBeInTheDocument();
+    expect(setOptionMock).toHaveBeenCalled();
+    const latestOption = setOptionMock.mock.calls[setOptionMock.mock.calls.length - 1]?.[0];
+    expect(latestOption?.yAxis?.min).toBe(62);
+    expect(latestOption?.yAxis?.max).toBe(83);
 
     fireEvent.click(screen.getByRole("button", { name: "Fat %" }));
 
     expect(screen.getByRole("heading", { name: "Fat % over time" })).toBeInTheDocument();
+  });
+
+  it("recovers cleanly after switching to a metric with no values", () => {
+    render(
+      <TrendsPanel
+        charts={charts}
+        measurements={measurements}
+        onDelete={async () => {}}
+        onReassign={async () => {}}
+        profiles={profiles}
+        selectedProfileId={1}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Water %" }));
+    expect(
+      screen.getByText("No water % data in this range yet. Try another time window."),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Weight" }));
+    expect(screen.getByRole("heading", { name: "Weight over time" })).toBeInTheDocument();
   });
 });
