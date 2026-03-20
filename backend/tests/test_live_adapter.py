@@ -183,10 +183,11 @@ def test_discover_targets_merges_target_history(monkeypatch, tmp_path: Path):
         "match_reasons": ["target address"],
         "rssi": -58,
     }
+    broadcast_payload = _chipsea_payload(74.19, "41:06:4a:9d:15:1e")
     compact_history_entry_round_1 = {
         "address": "41:06:4A:9D:15:1E",
         "normalized_address": "41:06:4a:9d:15:1e",
-        "manufacturer_data": {"24256": "1cfb138808082541064a9d151e"},
+        "manufacturer_data": {str(0xFFF0): broadcast_payload.hex()},
         "service_data": {},
         "service_uuids": [],
         "round": 1,
@@ -196,7 +197,7 @@ def test_discover_targets_merges_target_history(monkeypatch, tmp_path: Path):
     compact_history_entry_round_2 = {
         "address": "41:06:4A:9D:15:1E",
         "normalized_address": "41:06:4a:9d:15:1e",
-        "manufacturer_data": {"24256": "1cfb138808082541064a9d151e"},
+        "manufacturer_data": {str(0xFFF0): broadcast_payload.hex()},
         "service_data": {},
         "service_uuids": [],
         "round": 2,
@@ -234,3 +235,47 @@ def test_discover_targets_merges_target_history(monkeypatch, tmp_path: Path):
     assert len(matched_records) == 1
     assert [item["round"] for item in advertisement_history] == [1, 2]
     assert adapter._has_two_matching_target_packets(advertisement_history) is True
+
+
+def test_discover_targets_stops_after_first_selected_compact_candidate(
+    monkeypatch, tmp_path: Path
+):
+    adapter = LiveBleAdapter(build_settings(tmp_path))
+    adapter._scan_rounds = 4
+    device = SimpleNamespace(address="41:06:4A:9D:15:1E", name=None)
+    match_payload = {
+        "address": "41:06:4A:9D:15:1E",
+        "normalized_address": "41:06:4a:9d:15:1e",
+        "name": "Unknown",
+        "match_reasons": ["target address"],
+        "rssi": -58,
+    }
+    compact_history_entry_round_1 = {
+        "address": "41:06:4A:9D:15:1E",
+        "normalized_address": "41:06:4a:9d:15:1e",
+        "manufacturer_data": {"23744": "1cfb138808082541064a9d151e"},
+        "service_data": {},
+        "service_uuids": [],
+        "round": 1,
+        "sequence": 1,
+        "received_at": datetime(2026, 3, 17, 15, 43, 36, tzinfo=timezone.utc).isoformat(),
+    }
+    observed_rounds: list[int] = []
+
+    async def fake_scan_once(self, scanner_cls, round_number):
+        observed_rounds.append(round_number)
+        return [match_payload], [(match_payload, device)], [compact_history_entry_round_1]
+
+    monkeypatch.setattr(LiveBleAdapter, "_scan_once", fake_scan_once)
+
+    raw_devices, matches, matched_records, rounds_completed, advertisement_history = asyncio.run(
+        adapter._discover_targets(object())
+    )
+
+    assert observed_rounds == [1]
+    assert rounds_completed == 1
+    assert len(raw_devices) == 1
+    assert len(matches) == 1
+    assert len(matched_records) == 1
+    assert [item["round"] for item in advertisement_history] == [1]
+    assert adapter._has_selected_advertisement_candidate(advertisement_history) is True

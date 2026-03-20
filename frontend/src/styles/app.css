@@ -289,8 +289,33 @@ select {
   border-radius: 24px;
 }
 
+.live-action-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
 .compact-copy {
   margin: 0;
+}
+
+.live-timer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.9rem 1rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #f6ede2;
+}
+
+.live-timer strong {
+  font-size: 1rem;
+}
+
+.live-timer span {
+  color: #d9cab5;
+  font-size: 0.92rem;
 }
 
 .metric-grid {

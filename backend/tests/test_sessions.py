@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import threading
 import time
 
 from app.services.sessions import SessionManager
@@ -59,5 +61,43 @@ def test_start_session_surfaces_bluetooth_adapter_errors(client):
         assert session.status_code == 200
         assert session.json()["status"] == "failed"
         assert "No Bluetooth adapter was found on this machine." in session.json()["error_message"]
+    finally:
+        session_manager._adapter.capture_measurement = original_capture
+
+
+def test_cancel_session_stops_active_capture(client):
+    dashboard = client.get("/api/dashboard")
+    selected_profile_id = dashboard.json()["selected_profile_id"]
+    cancelled = threading.Event()
+
+    async def slow_capture(*_args, **_kwargs):
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    session_manager: SessionManager = client.app.state.session_manager
+    original_capture = session_manager._adapter.capture_measurement
+    session_manager._adapter.capture_measurement = slow_capture
+    try:
+        start = client.post("/api/sessions/start", json={"selected_profile_id": selected_profile_id})
+        assert start.status_code == 202
+        session_id = start.json()["id"]
+
+        time.sleep(0.08)
+
+        cancelled_response = client.post(f"/api/sessions/{session_id}/cancel")
+        assert cancelled_response.status_code == 200
+        assert cancelled_response.json()["status"] == "cancelled"
+        assert cancelled_response.json()["error_message"] == "Weigh-in cancelled."
+
+        time.sleep(0.08)
+
+        session = client.get("/api/sessions/current")
+        assert session.status_code == 200
+        assert session.json()["id"] == session_id
+        assert session.json()["status"] == "cancelled"
+        assert cancelled.wait(timeout=1.0) is True
     finally:
         session_manager._adapter.capture_measurement = original_capture

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import {
+  cancelSession,
   createProfile,
   commitImport,
   deleteMeasurement,
@@ -69,6 +70,7 @@ export function App() {
   const [currentSession, setCurrentSession] = useState<WeighSession | null>(null);
   const [liveDetails, setLiveDetails] = useState<Record<string, unknown> | null>(null);
   const [loadingStart, setLoadingStart] = useState(false);
+  const [loadingCancel, setLoadingCancel] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const websocketRef = useRef<WebSocket | null>(null);
 
@@ -143,6 +145,8 @@ export function App() {
   const pendingCount = measurements.filter(
     (measurement) => measurement.assignment_state !== "confirmed",
   ).length;
+  const sessionIsActive =
+    currentSession?.status === "armed" || currentSession?.status === "capturing";
 
   const tabItems: Array<{ key: TabKey; label: string }> = [
     { key: "overview", label: "Overview" },
@@ -220,10 +224,27 @@ export function App() {
                   </div>
                 </section>
                 <LiveSessionCard
+                  cancelling={loadingCancel}
                   details={liveDetails}
                   loading={loadingStart}
+                  onCancel={async () => {
+                    if (!currentSession || !sessionIsActive) {
+                      return;
+                    }
+                    setLoadingCancel(true);
+                    setError(null);
+                    try {
+                      const session = await cancelSession(currentSession.id);
+                      setCurrentSession(session);
+                      setLiveDetails(null);
+                    } catch (caughtError) {
+                      setError((caughtError as Error).message);
+                    } finally {
+                      setLoadingCancel(false);
+                    }
+                  }}
                   onStart={async () => {
-                    if (!selectedProfileId) {
+                    if (!selectedProfileId || sessionIsActive) {
                       return;
                     }
                     setLoadingStart(true);
@@ -231,6 +252,7 @@ export function App() {
                     try {
                       const session = await startSession(selectedProfileId);
                       setCurrentSession(session);
+                      setLiveDetails(null);
                     } catch (caughtError) {
                       setError((caughtError as Error).message);
                     } finally {

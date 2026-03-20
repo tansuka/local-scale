@@ -172,6 +172,18 @@ def get_current_session(
     return WeighSessionRead.model_validate(session)
 
 
+@router.post("/sessions/{session_id}/cancel", response_model=WeighSessionRead)
+async def post_cancel_session(
+    session_id: str,
+    db: Session = Depends(get_db),
+    session_manager: SessionManager = Depends(get_session_manager),
+) -> WeighSessionRead:
+    session = await session_manager.cancel_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return WeighSessionRead.model_validate(session)
+
+
 @router.post("/imports/csv/preview", response_model=ImportPreviewResponse)
 async def post_import_preview(file: UploadFile = File(...)) -> ImportPreviewResponse:
     return await preview_csv_upload(file)

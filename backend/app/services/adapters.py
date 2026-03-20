@@ -555,6 +555,16 @@ class LiveBleAdapter(ScaleAdapter):
                 return True
         return False
 
+    @classmethod
+    def _has_selected_advertisement_candidate(
+        cls,
+        advertisement_history: list[dict[str, Any]],
+    ) -> bool:
+        if not advertisement_history:
+            return False
+        analysis = cls._analyze_advertisement_history(advertisement_history)
+        return analysis.get("selected_candidate") is not None
+
     async def _scan_once(
         self,
         scanner_cls: Any,
@@ -586,7 +596,7 @@ class LiveBleAdapter(ScaleAdapter):
                         sequence_number=sequence_number,
                     )
                 )
-                if self._has_two_matching_target_packets(advertisement_history):
+                if self._has_selected_advertisement_candidate(advertisement_history):
                     enough_target_packets.set()
 
         try:
@@ -685,7 +695,7 @@ class LiveBleAdapter(ScaleAdapter):
                 matched_targets[device_key] = (merged_payload, device)
 
             advertisement_history.extend(round_history)
-            if self._has_two_matching_target_packets(advertisement_history):
+            if self._has_selected_advertisement_candidate(advertisement_history):
                 break
             if round_number >= self._scan_rounds:
                 break

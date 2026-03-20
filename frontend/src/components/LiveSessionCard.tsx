@@ -1,10 +1,14 @@
+import { useEffect, useState } from "react";
+
 import type { Profile, WeighSession } from "../lib/types";
 
 type LiveSessionCardProps = {
   session: WeighSession | null;
   selectedProfile?: Profile;
   loading: boolean;
+  cancelling: boolean;
   onStart: () => void;
+  onCancel: () => void;
   details?: Record<string, unknown> | null;
 };
 
@@ -13,7 +17,18 @@ const STATUS_COPY: Record<string, string> = {
   capturing: "Listening for the scale now.",
   completed: "Measurement captured.",
   failed: "The session did not complete.",
+  cancelled: "Weigh-in cancelled.",
 };
+
+function isActiveSession(session: WeighSession | null): boolean {
+  return session?.status === "armed" || session?.status === "capturing";
+}
+
+function formatRemainingTime(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
 
 function isDecoderPendingMessage(message?: string | null): boolean {
   return !!message?.toLowerCase().includes("protocol decoding still needs a packet capture");
@@ -45,6 +60,9 @@ function displayStatus(session: WeighSession | null): string {
 }
 
 function displayStatusTone(session: WeighSession | null): string {
+  if (session?.status === "cancelled") {
+    return "info";
+  }
   if (isTargetNotSeenMessage(session?.error_message) && session?.status === "failed") {
     return "info";
   }
@@ -84,6 +102,9 @@ function liveErrorTitle(message?: string | null): string {
   if (lowered.includes("configured target scale was not seen")) {
     return "Scale not seen yet";
   }
+  if (lowered.includes("weigh-in cancelled")) {
+    return "Weigh-in cancelled";
+  }
   if (lowered.includes("protocol decoding still needs a packet capture")) {
     return "Decoder setup still needed";
   }
@@ -100,12 +121,16 @@ export function LiveSessionCard({
   session,
   selectedProfile,
   loading,
+  cancelling,
   onStart,
+  onCancel,
   details,
 }: LiveSessionCardProps) {
+  const [now, setNow] = useState(() => Date.now());
   const copy = statusCopy(session);
   const shownStatus = displayStatus(session);
   const shownStatusTone = displayStatusTone(session);
+  const sessionIsActive = isActiveSession(session);
   const captureFile = typeof details?.capture_file === "string" ? details.capture_file : null;
   const scanTimeoutSeconds =
     typeof details?.scan_timeout_seconds === "number" ? details.scan_timeout_seconds : null;
@@ -142,21 +167,55 @@ export function LiveSessionCard({
         match_reasons?: string[];
       }>)
     : [];
+  const expiresAt = session?.expires_at ? Date.parse(session.expires_at) : NaN;
+  const remainingSeconds =
+    sessionIsActive && Number.isFinite(expiresAt)
+      ? Math.max(0, Math.ceil((expiresAt - now) / 1000))
+      : null;
+
+  useEffect(() => {
+    if (!sessionIsActive) {
+      return;
+    }
+    setNow(Date.now());
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [sessionIsActive, session?.expires_at]);
 
   return (
     <section className="panel live-panel">
       <div className="live-actions">
         <p className="eyebrow">Live Weigh-In</p>
-        <button
-          className="primary-button big-weigh-button"
-          disabled={loading || !selectedProfile}
-          onClick={onStart}
-          type="button"
-        >
-          {loading ? "Starting..." : "Start Weigh-In"}
-        </button>
+        <div className="live-action-row">
+          <button
+            className="primary-button big-weigh-button"
+            disabled={loading || cancelling || !selectedProfile || sessionIsActive}
+            onClick={onStart}
+            type="button"
+          >
+            {loading ? "Starting..." : sessionIsActive ? "Weigh-In Running" : "Start Weigh-In"}
+          </button>
+          {sessionIsActive ? (
+            <button
+              className="ghost-button danger-button"
+              disabled={loading || cancelling}
+              onClick={onCancel}
+              type="button"
+            >
+              {cancelling ? "Cancelling..." : "Cancel"}
+            </button>
+          ) : null}
+        </div>
         <div className={`status-pill ${shownStatusTone}`}>{shownStatus}</div>
         <p className="muted compact-copy">{copy}</p>
+        {remainingSeconds !== null ? (
+          <div className="live-timer">
+            <strong>Time remaining: {formatRemainingTime(remainingSeconds)}</strong>
+            <span>Scan ends automatically when the timer runs out.</span>
+          </div>
+        ) : null}
         {session?.error_message ? (
           <div className="alert-card">
             <strong>{liveErrorTitle(session.error_message)}</strong>

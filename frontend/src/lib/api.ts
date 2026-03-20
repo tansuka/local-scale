@@ -37,6 +37,12 @@ export function startSession(selectedProfileId: number): Promise<WeighSession> {
   });
 }
 
+export function cancelSession(sessionId: string): Promise<WeighSession> {
+  return request<WeighSession>(`/api/sessions/${sessionId}/cancel`, {
+    method: "POST",
+  });
+}
+
 export function reassignMeasurement(
   measurementId: number,
   profileId: number,

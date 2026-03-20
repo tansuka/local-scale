@@ -51,6 +51,19 @@ class SessionManager:
         self._adapter_mode = adapter_mode
         self._session_timeout = session_timeout_seconds
         self._lock = asyncio.Lock()
+        self._tasks: dict[str, asyncio.Task[None]] = {}
+
+    @staticmethod
+    def _is_active_status(status: str) -> bool:
+        return status in {"armed", "capturing"}
+
+    @staticmethod
+    def _is_terminal_status(status: str) -> bool:
+        return status in {"completed", "failed", "cancelled"}
+
+    @staticmethod
+    def _serialize_session(session: WeighSession) -> dict[str, Any]:
+        return WeighSessionRead.model_validate(session).model_dump(mode="json")
 
     def latest(self, db: Session) -> WeighSession | None:
         return latest_session(db)
@@ -70,11 +83,40 @@ class SessionManager:
                     "requires_confirmation": False,
                 },
             )
-            asyncio.create_task(self._run_session(session.id))
+            task = asyncio.create_task(self._run_session(session.id))
+            self._tasks[session.id] = task
             await self._events.broadcast(
-                {"type": "session.updated", "session": WeighSessionRead.model_validate(session).model_dump(mode="json")}
+                {"type": "session.updated", "session": self._serialize_session(session)}
             )
             return session
+
+    async def cancel_session(self, db: Session, session_id: str) -> WeighSession | None:
+        async with self._lock:
+            session = get_session(db, session_id)
+            if session is None:
+                return None
+            if not self._is_active_status(session.status):
+                return session
+
+            session.status = "cancelled"
+            session.completed_at = datetime.now(timezone.utc)
+            session.error_message = "Weigh-in cancelled."
+            db.commit()
+            db.refresh(session)
+
+            task = self._tasks.get(session_id)
+            if task is not None and not task.done():
+                task.cancel()
+
+            await self._events.broadcast(
+                {"type": "session.updated", "session": self._serialize_session(session)}
+            )
+            return session
+
+    def _session_was_cancelled(self, db: Session, session_id: str) -> bool:
+        db.expire_all()
+        session = get_session(db, session_id)
+        return session is not None and session.status == "cancelled"
 
     async def _run_session(self, session_id: str) -> None:
         db = self._database.make_session()
@@ -82,11 +124,13 @@ class SessionManager:
             session = get_session(db, session_id)
             if session is None:
                 return
+            if self._is_terminal_status(session.status):
+                return
             session.status = "capturing"
             db.commit()
             db.refresh(session)
             await self._events.broadcast(
-                {"type": "session.updated", "session": WeighSessionRead.model_validate(session).model_dump(mode="json")}
+                {"type": "session.updated", "session": self._serialize_session(session)}
             )
 
             profile = get_profile(db, session.selected_profile_id)
@@ -95,6 +139,8 @@ class SessionManager:
 
             recent = recent_measurements(db, profile.id, limit=14)
             raw_measurement = await self._adapter.capture_measurement(profile, recent)
+            if self._session_was_cancelled(db, session_id):
+                raise asyncio.CancelledError
             normalized = normalize_measurement(profile, raw_measurement)
             score = anomaly_score(recent, normalized)
             needs_confirmation = requires_confirmation(score, normalized, recent)
@@ -127,8 +173,20 @@ class SessionManager:
                 }
             )
             await self._events.broadcast(
-                {"type": "session.updated", "session": WeighSessionRead.model_validate(session).model_dump(mode="json")}
+                {"type": "session.updated", "session": self._serialize_session(session)}
             )
+        except asyncio.CancelledError:
+            session = get_session(db, session_id)
+            if session is not None and not self._is_terminal_status(session.status):
+                session.status = "cancelled"
+                session.completed_at = datetime.now(timezone.utc)
+                session.error_message = "Weigh-in cancelled."
+                db.commit()
+                db.refresh(session)
+                await self._events.broadcast(
+                    {"type": "session.updated", "session": self._serialize_session(session)}
+                )
+            raise
         except ScaleAdapterError as exc:
             session = get_session(db, session_id)
             if session is not None:
@@ -140,7 +198,7 @@ class SessionManager:
                 await self._events.broadcast(
                     {
                         "type": "session.updated",
-                        "session": WeighSessionRead.model_validate(session).model_dump(mode="json"),
+                        "session": self._serialize_session(session),
                         "details": exc.details,
                     }
                 )
@@ -155,7 +213,7 @@ class SessionManager:
                 await self._events.broadcast(
                     {
                         "type": "session.updated",
-                        "session": WeighSessionRead.model_validate(session).model_dump(mode="json"),
+                        "session": self._serialize_session(session),
                         "details": {
                             "error_type": exc.__class__.__name__,
                             "raw_error": str(exc),
@@ -163,4 +221,5 @@ class SessionManager:
                     }
                 )
         finally:
+            self._tasks.pop(session_id, None)
             db.close()
