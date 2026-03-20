@@ -426,9 +426,7 @@ class LiveBleAdapter(ScaleAdapter):
             if not 20.0 <= weight_kg <= 250.0:
                 continue
 
-            impedance_ohm = round(int.from_bytes(payload[2:4], byteorder="big") / 10.0)
-            if not 100 <= impedance_ohm <= 1500:
-                continue
+            compact_field_2_4_raw = int.from_bytes(payload[2:4], byteorder="big")
 
             parsed_candidates.append(
                 {
@@ -440,7 +438,7 @@ class LiveBleAdapter(ScaleAdapter):
                     "normalized_address": normalized_address,
                     "company_id": company_id,
                     "weight_kg": weight_kg,
-                    "impedance_ohm": impedance_ohm,
+                    "compact_field_2_4_raw": compact_field_2_4_raw,
                     "mac_matches": True,
                     "payload_hex": payload.hex(),
                 }
@@ -470,6 +468,7 @@ class LiveBleAdapter(ScaleAdapter):
                     "latest_received_at": candidate.get("received_at"),
                     "mac_matches": True,
                     "impedance_ohm": candidate.get("impedance_ohm"),
+                    "compact_field_2_4_raw": candidate.get("compact_field_2_4_raw"),
                     "samples": [],
                 },
             )
@@ -478,6 +477,11 @@ class LiveBleAdapter(ScaleAdapter):
             bucket["mac_matches"] = bool(bucket["mac_matches"]) and bool(candidate.get("mac_matches"))
             if bucket.get("impedance_ohm") is None and candidate.get("impedance_ohm") is not None:
                 bucket["impedance_ohm"] = candidate.get("impedance_ohm")
+            if (
+                bucket.get("compact_field_2_4_raw") is None
+                and candidate.get("compact_field_2_4_raw") is not None
+            ):
+                bucket["compact_field_2_4_raw"] = candidate.get("compact_field_2_4_raw")
             if len(bucket["samples"]) < 5:
                 bucket["samples"].append(candidate)
 
@@ -976,6 +980,7 @@ class LiveBleAdapter(ScaleAdapter):
                 "parser": candidate.get("parser"),
                 "sample_count": candidate.get("count"),
                 "impedance_ohm": candidate.get("impedance_ohm"),
+                "compact_field_2_4_raw": candidate.get("compact_field_2_4_raw"),
                 "samples": list(candidate.get("samples", []) or []),
             },
             "source_metric_map": {
