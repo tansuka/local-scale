@@ -137,7 +137,7 @@ def get_dashboard(
 ) -> DashboardPayload:
     profiles = list_profiles(db)
     selected_profile = profile_id or (profiles[0].id if profiles else None)
-    measurements = list_measurements(db, profile_id=selected_profile, limit=25) if selected_profile else []
+    measurements = list_measurements(db, profile_id=selected_profile, limit=365) if selected_profile else []
     charts = None
     if selected_profile is not None:
         charts = _build_chart_response(selected_profile, chart_series(db, selected_profile)["rows"])

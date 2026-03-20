@@ -21,17 +21,16 @@ import type {
   Profile,
   WeighSession,
 } from "./lib/types";
-import { ChartPanel } from "./components/ChartPanel";
-import { HistoryTable } from "./components/HistoryTable";
 import { ImportPanel } from "./components/ImportPanel";
 import { LiveSessionCard } from "./components/LiveSessionCard";
 import { MetricPanel } from "./components/MetricPanel";
 import { ProfileForm } from "./components/ProfileForm";
 import { ProfileSwitcher } from "./components/ProfileSwitcher";
+import { TrendsPanel } from "./components/TrendsPanel";
 import { formatDate } from "./lib/dates";
 
 const STORAGE_KEY = "local-scale:selected-profile-id";
-type TabKey = "overview" | "trends" | "history" | "import";
+type TabKey = "overview" | "trends" | "import";
 
 function readSelectedProfileId(): number | null {
   const rawValue = window.localStorage.getItem(STORAGE_KEY);
@@ -130,7 +129,7 @@ export function App() {
         payload.type === "measurement.created" &&
         payload.measurement.profile_id === selectedProfileId
       ) {
-        setMeasurements((current) => [payload.measurement, ...current].slice(0, 50));
+        setMeasurements((current) => [payload.measurement, ...current].slice(0, 365));
         void fetchCharts(payload.measurement.profile_id).then(setCharts);
       }
     };
@@ -151,7 +150,6 @@ export function App() {
   const tabItems: Array<{ key: TabKey; label: string }> = [
     { key: "overview", label: "Overview" },
     { key: "trends", label: "Trends" },
-    { key: "history", label: "History" },
     { key: "import", label: "Settings" },
   ];
 
@@ -268,27 +266,20 @@ export function App() {
           ) : null}
 
           {activeTab === "trends" ? (
-            <div className="tab-content">
-              <ChartPanel charts={charts} />
-            </div>
-          ) : null}
-
-          {activeTab === "history" ? (
-            <div className="tab-content">
-              <HistoryTable
-                measurements={measurements}
-                profiles={profiles}
-                selectedProfileId={selectedProfileId}
-                onReassign={async (measurementId, profileId) => {
-                  await reassignMeasurement(measurementId, profileId);
-                  await hydrateDashboard(selectedProfileId);
-                }}
-                onDelete={async (measurementId) => {
-                  await deleteMeasurement(measurementId);
-                  await hydrateDashboard(selectedProfileId);
-                }}
-              />
-            </div>
+            <TrendsPanel
+              charts={charts}
+              measurements={measurements}
+              profiles={profiles}
+              selectedProfileId={selectedProfileId}
+              onDelete={async (measurementId) => {
+                await deleteMeasurement(measurementId);
+                await hydrateDashboard(selectedProfileId);
+              }}
+              onReassign={async (measurementId, profileId) => {
+                await reassignMeasurement(measurementId, profileId);
+                await hydrateDashboard(selectedProfileId);
+              }}
+            />
           ) : null}
 
           {activeTab === "import" ? (

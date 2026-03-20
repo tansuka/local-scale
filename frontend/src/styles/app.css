@@ -223,6 +223,21 @@ select {
   display: none;
 }
 
+.metric-toggle-row {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 0.3rem;
+  margin-bottom: 0.9rem;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.metric-toggle-row::-webkit-scrollbar {
+  display: none;
+}
+
 .range-button {
   flex: 0 0 auto;
   white-space: nowrap;
@@ -397,6 +412,11 @@ select {
   font-size: 0.84rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
+}
+
+.history-empty {
+  color: #d8c3a9;
+  text-align: center;
 }
 
 .action-row {

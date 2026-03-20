@@ -62,6 +62,9 @@ type HistoryTableProps = {
   selectedProfileId?: number | null;
   onReassign: (measurementId: number, profileId: number) => Promise<void>;
   onDelete: (measurementId: number) => Promise<void>;
+  eyebrow?: string;
+  title?: string;
+  emptyMessage?: string;
 };
 
 export function HistoryTable({
@@ -70,6 +73,9 @@ export function HistoryTable({
   selectedProfileId,
   onReassign,
   onDelete,
+  eyebrow = "History",
+  title = "Recent weigh-ins",
+  emptyMessage = "No measurements found for this range yet.",
 }: HistoryTableProps) {
   const [busyMeasurementId, setBusyMeasurementId] = useState<number | null>(null);
   const [targetProfileIds, setTargetProfileIds] = useState<Record<number, number>>({});
@@ -88,8 +94,8 @@ export function HistoryTable({
     <section className="panel">
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">History</p>
-          <h2>Recent weigh-ins</h2>
+          <p className="eyebrow">{eyebrow}</p>
+          <h2>{title}</h2>
         </div>
       </div>
       <div className="history-table-wrapper">
@@ -106,6 +112,13 @@ export function HistoryTable({
             </tr>
           </thead>
           <tbody>
+            {measurements.length === 0 ? (
+              <tr>
+                <td className="history-empty" colSpan={7}>
+                  {emptyMessage}
+                </td>
+              </tr>
+            ) : null}
             {measurements.map((measurement) => {
               const pending = measurement.assignment_state !== "confirmed";
               const impedanceOhm = extractImpedanceOhm(measurement);

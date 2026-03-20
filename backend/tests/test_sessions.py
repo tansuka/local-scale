@@ -101,3 +101,15 @@ def test_cancel_session_stops_active_capture(client):
         assert cancelled.wait(timeout=1.0) is True
     finally:
         session_manager._adapter.capture_measurement = original_capture
+
+
+def test_start_session_serializes_utc_datetimes(client):
+    dashboard = client.get("/api/dashboard")
+    selected_profile_id = dashboard.json()["selected_profile_id"]
+
+    start = client.post("/api/sessions/start", json={"selected_profile_id": selected_profile_id})
+    payload = start.json()
+
+    assert start.status_code == 202
+    assert payload["started_at"].endswith("Z")
+    assert payload["expires_at"].endswith("Z")

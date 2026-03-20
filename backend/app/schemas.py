@@ -1,9 +1,16 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic.functional_serializers import field_serializer
+
+
+def _serialize_datetime_assuming_utc(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 class ProfileCreate(BaseModel):
@@ -53,6 +60,10 @@ class MeasurementRead(BaseModel):
     source_metric_map: dict[str, str]
     raw_payload_json: dict[str, Any]
 
+    @field_serializer("measured_at")
+    def serialize_measured_at(self, value: datetime) -> str:
+        return _serialize_datetime_assuming_utc(value)
+
 
 class MeasurementReassignRequest(BaseModel):
     profile_id: int
@@ -61,6 +72,10 @@ class MeasurementReassignRequest(BaseModel):
 class ChartPoint(BaseModel):
     measured_at: datetime
     value: float
+
+    @field_serializer("measured_at")
+    def serialize_measured_at(self, value: datetime) -> str:
+        return _serialize_datetime_assuming_utc(value)
 
 
 class ChartResponse(BaseModel):
@@ -86,6 +101,10 @@ class WeighSessionRead(BaseModel):
     anomaly_score: float | None = None
     requires_confirmation: bool
     error_message: str | None = None
+
+    @field_serializer("started_at", "expires_at", "completed_at", when_used="json-unless-none")
+    def serialize_session_datetimes(self, value: datetime) -> str:
+        return _serialize_datetime_assuming_utc(value)
 
 
 class ImportPreviewRow(BaseModel):
