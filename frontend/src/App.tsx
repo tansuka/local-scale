@@ -27,7 +27,7 @@ import { MetricPanel } from "./components/MetricPanel";
 import { ProfileForm } from "./components/ProfileForm";
 import { ProfileSwitcher } from "./components/ProfileSwitcher";
 import { TrendsPanel } from "./components/TrendsPanel";
-import { formatDate } from "./lib/dates";
+import { formatDateTime } from "./lib/dates";
 
 const STORAGE_KEY = "local-scale:selected-profile-id";
 type TabKey = "overview" | "trends" | "import";
@@ -210,14 +210,11 @@ export function App() {
                       <strong>
                         {latestMeasurement ? `${latestMeasurement.weight_kg} kg` : "—"}
                       </strong>
-                    </div>
-                    <div>
-                      <span>Last updated</span>
-                      <strong>
+                      <small className="summary-meta">
                         {latestMeasurement
-                          ? formatDate(latestMeasurement.measured_at)
-                          : "—"}
-                      </strong>
+                          ? `Updated ${formatDateTime(latestMeasurement.measured_at)}`
+                          : "No measurement yet"}
+                      </small>
                     </div>
                   </div>
                 </section>
@@ -261,7 +258,7 @@ export function App() {
                   session={currentSession}
                 />
               </div>
-              <MetricPanel measurement={latestMeasurement} />
+              <MetricPanel measurement={latestMeasurement} profile={selectedProfile} />
             </div>
           ) : null}
 
