@@ -95,6 +95,21 @@ def test_scan_once_collects_target_advertisement_history(tmp_path: Path):
     assert FakeScanner.instance is not None and FakeScanner.instance.stopped is True
 
 
+def test_match_reasons_accepts_embedded_manufacturer_mac(tmp_path: Path):
+    adapter = LiveBleAdapter(build_settings(tmp_path))
+
+    reasons = adapter._match_reasons(
+        {
+            "address": "AA:BB:CC:DD:EE:FF",
+            "manufacturer_data": {
+                "32448": "1cc9138808082541064a9d151e",
+            },
+        }
+    )
+
+    assert "manufacturer mac" in reasons
+
+
 def test_analyze_advertisement_history_selects_stable_chipsea_weight():
     normalized_address = "41:06:4a:9d:15:1e"
     payload = _chipsea_payload(70.25, normalized_address)

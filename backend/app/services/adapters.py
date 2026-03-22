@@ -194,6 +194,8 @@ class LiveBleAdapter(ScaleAdapter):
         normalized_address = self._normalize_address(payload.get("address"))
         if normalized_address and normalized_address in self._target_addresses:
             reasons.append("target address")
+        if self._matches_target_manufacturer_mac(payload):
+            reasons.append("manufacturer mac")
 
         searchable_names = [
             str(payload.get("name") or "").lower(),
@@ -208,6 +210,8 @@ class LiveBleAdapter(ScaleAdapter):
         score = 0
         if "target address" in reasons:
             score += 1000
+        if "manufacturer mac" in reasons:
+            score += 900
         if "target name" in reasons:
             score += 500
         rssi = payload.get("rssi")
@@ -220,6 +224,30 @@ class LiveBleAdapter(ScaleAdapter):
         if payload.get("service_uuids"):
             score += 10
         return score, int(rssi) if isinstance(rssi, int) else -999
+
+    def _matches_target_manufacturer_mac(self, payload: dict[str, Any]) -> bool:
+        if not self._target_addresses:
+            return False
+
+        target_macs = {
+            mac_bytes
+            for normalized in self._target_addresses
+            if (mac_bytes := self._chipsea_mac_bytes(normalized)) is not None
+        }
+        if not target_macs:
+            return False
+
+        for raw_value in (payload.get("manufacturer_data") or {}).values():
+            try:
+                manufacturer_payload = bytes.fromhex(str(raw_value))
+            except (TypeError, ValueError):
+                continue
+            if len(manufacturer_payload) < 6:
+                continue
+            trailing_mac = manufacturer_payload[-6:]
+            if trailing_mac in target_macs or trailing_mac[::-1] in target_macs:
+                return True
+        return False
 
     @staticmethod
     def _device_key(payload: dict[str, Any], fallback: str) -> str:
