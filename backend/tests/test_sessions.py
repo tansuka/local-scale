@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
+from datetime import datetime
 
 from app.services.sessions import SessionManager
 
@@ -113,3 +114,23 @@ def test_start_session_serializes_utc_datetimes(client):
     assert start.status_code == 202
     assert payload["started_at"].endswith("Z")
     assert payload["expires_at"].endswith("Z")
+
+
+def test_start_session_uses_adapter_expected_capture_window(client):
+    dashboard = client.get("/api/dashboard")
+    selected_profile_id = dashboard.json()["selected_profile_id"]
+
+    session_manager: SessionManager = client.app.state.session_manager
+    original_expected_capture_seconds = session_manager._adapter.expected_capture_seconds
+    session_manager._adapter.expected_capture_seconds = lambda: 3.0
+    try:
+        start = client.post("/api/sessions/start", json={"selected_profile_id": selected_profile_id})
+        payload = start.json()
+
+        started_at = datetime.fromisoformat(payload["started_at"].replace("Z", "+00:00"))
+        expires_at = datetime.fromisoformat(payload["expires_at"].replace("Z", "+00:00"))
+
+        assert start.status_code == 202
+        assert (expires_at - started_at).total_seconds() == 3.0
+    finally:
+        session_manager._adapter.expected_capture_seconds = original_expected_capture_seconds

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -71,6 +72,9 @@ class SessionManager:
     async def start_session(self, db: Session, selected_profile_id: int) -> WeighSession:
         async with self._lock:
             started_at = datetime.now(timezone.utc)
+            expected_capture_seconds = float(self._adapter.expected_capture_seconds())
+            if expected_capture_seconds <= 0:
+                expected_capture_seconds = float(self._session_timeout)
             session = create_session(
                 db,
                 {
@@ -79,7 +83,7 @@ class SessionManager:
                     "status": "armed",
                     "adapter_mode": self._adapter_mode,
                     "started_at": started_at,
-                    "expires_at": started_at + timedelta(seconds=self._session_timeout),
+                    "expires_at": started_at + timedelta(seconds=math.ceil(expected_capture_seconds)),
                     "requires_confirmation": False,
                 },
             )

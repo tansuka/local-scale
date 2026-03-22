@@ -20,6 +20,10 @@ class ScaleAdapterError(RuntimeError):
 
 class ScaleAdapter(ABC):
     @abstractmethod
+    def expected_capture_seconds(self) -> float:
+        raise NotImplementedError
+
+    @abstractmethod
     async def capture_measurement(
         self,
         profile: Profile,
@@ -68,6 +72,9 @@ class ReplayAdapter(ScaleAdapter):
             "skeletal_muscle_pct": 31.5,
             "visceral_fat": 8.0,
         }
+
+    def expected_capture_seconds(self) -> float:
+        return self._delay
 
     async def capture_measurement(
         self,
@@ -139,6 +146,12 @@ class LiveBleAdapter(ScaleAdapter):
         self._connect_retries = settings.ble_connect_retries
         self._connect_retry_pause_seconds = settings.ble_connect_retry_pause_seconds
         self._notify_capture_seconds = settings.ble_notify_capture_seconds
+
+    def expected_capture_seconds(self) -> float:
+        scan_window = (self._scan_rounds * self._scan_timeout_seconds) + (
+            max(0, self._scan_rounds - 1) * self._scan_pause_seconds
+        )
+        return scan_window
 
     @staticmethod
     def _normalize_address(value: str | None) -> str | None:
