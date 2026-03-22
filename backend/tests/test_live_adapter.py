@@ -6,7 +6,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from app.core.config import Settings
-from app.services.adapters import LiveBleAdapter
+import pytest
+
+from app.services.adapters import LiveBleAdapter, ScaleAdapterError
 
 
 def build_settings(tmp_path: Path) -> Settings:
@@ -143,9 +145,12 @@ def test_analyze_advertisement_history_selects_single_compact_candidate():
 
     assert analysis["parsed_candidate_count"] == 1
     assert analysis["selected_candidate"] is not None
+    assert len(analysis["final_compact_candidates"]) == 1
     assert analysis["selected_candidate"]["parser"] == "chipsea_compact_adv_v1"
     assert analysis["selected_candidate"]["weight_kg"] == 74.19
     assert analysis["selected_candidate"]["compact_field_2_4_raw"] == 5000
+    assert analysis["selected_candidate"]["compact_status_hex"] == "080825"
+    assert analysis["selected_candidate"]["is_final_bia"] is True
     assert analysis["selected_candidate"]["samples"][0]["compact_field_2_4_raw"] == 5000
 
 
@@ -169,6 +174,7 @@ def test_measurement_from_advertisement_candidate_keeps_compact_raw_field():
 
     assert measurement["raw_payload_json"]["impedance_ohm"] is None
     assert measurement["raw_payload_json"]["compact_field_2_4_raw"] == 5000
+    assert measurement["raw_payload_json"]["is_final_bia"] is False
     assert measurement["raw_payload_json"]["samples"][0]["compact_field_2_4_raw"] == 5000
 
 
@@ -279,3 +285,29 @@ def test_discover_targets_stops_after_first_selected_compact_candidate(
     assert len(matched_records) == 1
     assert [item["round"] for item in advertisement_history] == [1]
     assert adapter._has_selected_advertisement_candidate(advertisement_history) is True
+
+
+def test_capture_measurement_skips_protocol_fallback(monkeypatch, tmp_path: Path):
+    adapter = LiveBleAdapter(build_settings(tmp_path))
+    device = SimpleNamespace(address="41:06:4A:9D:15:1E", name=None)
+    match_payload = {
+        "address": "41:06:4A:9D:15:1E",
+        "normalized_address": "41:06:4a:9d:15:1e",
+        "name": "Unknown",
+        "match_reasons": ["target address"],
+        "rssi": -58,
+    }
+
+    async def fake_discover_targets(self, scanner_cls):
+        return [match_payload], [match_payload], [(match_payload, device)], 1, []
+
+    async def fail_capture_target_protocol(self, target_device, target_payload):
+        raise AssertionError("protocol capture should stay disabled")
+
+    monkeypatch.setattr(LiveBleAdapter, "_discover_targets", fake_discover_targets)
+    monkeypatch.setattr(LiveBleAdapter, "_capture_target_protocol", fail_capture_target_protocol)
+
+    with pytest.raises(ScaleAdapterError) as exc_info:
+        asyncio.run(adapter.capture_measurement(SimpleNamespace(name="Tansu"), []))
+
+    assert "no final advertisement packet arrived" in str(exc_info.value).lower()

@@ -440,6 +440,8 @@ class LiveBleAdapter(ScaleAdapter):
                 continue
 
             compact_field_2_4_raw = int.from_bytes(payload[2:4], byteorder="big")
+            compact_status_hex = payload[4:7].hex()
+            is_final_bia = compact_field_2_4_raw > 0 and payload[6] >= 0x25
 
             parsed_candidates.append(
                 {
@@ -452,6 +454,8 @@ class LiveBleAdapter(ScaleAdapter):
                     "company_id": company_id,
                     "weight_kg": weight_kg,
                     "compact_field_2_4_raw": compact_field_2_4_raw,
+                    "compact_status_hex": compact_status_hex,
+                    "is_final_bia": is_final_bia,
                     "mac_matches": True,
                     "payload_hex": payload.hex(),
                 }
@@ -482,12 +486,15 @@ class LiveBleAdapter(ScaleAdapter):
                     "mac_matches": True,
                     "impedance_ohm": candidate.get("impedance_ohm"),
                     "compact_field_2_4_raw": candidate.get("compact_field_2_4_raw"),
+                    "compact_status_hex": candidate.get("compact_status_hex"),
+                    "is_final_bia": bool(candidate.get("is_final_bia")),
                     "samples": [],
                 },
             )
             bucket["count"] += 1
             bucket["latest_received_at"] = candidate.get("received_at")
             bucket["mac_matches"] = bool(bucket["mac_matches"]) and bool(candidate.get("mac_matches"))
+            bucket["is_final_bia"] = bool(bucket["is_final_bia"]) or bool(candidate.get("is_final_bia"))
             if bucket.get("impedance_ohm") is None and candidate.get("impedance_ohm") is not None:
                 bucket["impedance_ohm"] = candidate.get("impedance_ohm")
             if (
@@ -495,9 +502,26 @@ class LiveBleAdapter(ScaleAdapter):
                 and candidate.get("compact_field_2_4_raw") is not None
             ):
                 bucket["compact_field_2_4_raw"] = candidate.get("compact_field_2_4_raw")
+            if (
+                bucket.get("compact_status_hex") is None
+                and candidate.get("compact_status_hex") is not None
+            ):
+                bucket["compact_status_hex"] = candidate.get("compact_status_hex")
             if len(bucket["samples"]) < 5:
                 bucket["samples"].append(candidate)
 
+        final_compact_candidates = sorted(
+            (
+                bucket
+                for bucket in grouped.values()
+                if bucket["count"] >= 1
+                and bucket["mac_matches"]
+                and str(bucket.get("parser")) == "chipsea_compact_adv_v1"
+                and bool(bucket.get("is_final_bia"))
+            ),
+            key=lambda bucket: (int(bucket["count"]), str(bucket.get("latest_received_at") or "")),
+            reverse=True,
+        )
         stable_candidates = sorted(
             (
                 bucket
@@ -518,7 +542,9 @@ class LiveBleAdapter(ScaleAdapter):
             key=lambda bucket: (int(bucket["count"]), str(bucket.get("latest_received_at") or "")),
             reverse=True,
         )
-        selected_candidate = stable_candidates[0] if stable_candidates else None
+        selected_candidate = final_compact_candidates[0] if final_compact_candidates else None
+        if selected_candidate is None:
+            selected_candidate = stable_candidates[0] if stable_candidates else None
         if selected_candidate is None and strong_single_candidates:
             selected_candidate = strong_single_candidates[0]
 
@@ -526,6 +552,7 @@ class LiveBleAdapter(ScaleAdapter):
             "target_event_count": len(advertisement_history),
             "parsed_candidate_count": len(parsed_candidates),
             "parsed_candidates": parsed_candidates[:20],
+            "final_compact_candidates": final_compact_candidates[:10],
             "stable_candidates": stable_candidates[:10],
             "strong_single_candidates": strong_single_candidates[:10],
             "selected_candidate": selected_candidate,
@@ -1004,6 +1031,8 @@ class LiveBleAdapter(ScaleAdapter):
                 "sample_count": candidate.get("count"),
                 "impedance_ohm": candidate.get("impedance_ohm"),
                 "compact_field_2_4_raw": candidate.get("compact_field_2_4_raw"),
+                "compact_status_hex": candidate.get("compact_status_hex"),
+                "is_final_bia": bool(candidate.get("is_final_bia")),
                 "samples": list(candidate.get("samples", []) or []),
             },
             "source_metric_map": {
@@ -1072,21 +1101,10 @@ class LiveBleAdapter(ScaleAdapter):
             reverse=True,
         )[:5]
 
-        protocol_capture: dict[str, Any] | None = None
-        if (
-            selected_advertisement_candidate is None
-            and matched_targets
-            and (protocol_capture is None or not protocol_capture.get("connected"))
-        ):
-            target_payload, target_device = matched_targets[0]
-            fallback_protocol_capture = await self._capture_target_protocol(
-                target_device,
-                target_payload,
-            )
-            protocol_capture = self._merge_protocol_captures(
-                protocol_capture,
-                fallback_protocol_capture,
-            )
+        protocol_capture: dict[str, Any] | None = {
+            "skipped": True,
+            "reason": "disabled_for_compact_advertisement_scale",
+        }
 
         capture_payload = {
             "captured_at": datetime.now(timezone.utc).isoformat(),
@@ -1129,8 +1147,11 @@ class LiveBleAdapter(ScaleAdapter):
                 "parsed_candidate_count", 0
             ),
         }
-        message = "Live Bluetooth discovery is wired up, but protocol decoding still needs a packet capture from the MiniPC target."
-        if protocol_capture is not None:
+        message = (
+            "Live Bluetooth found the target scale, but no final advertisement packet "
+            "arrived before the capture window ended."
+        )
+        if protocol_capture is not None and not protocol_capture.get("skipped"):
             notification_capture = protocol_capture.get("notification_capture") or {}
             details["target_connection_status"] = (
                 "connected" if protocol_capture.get("connected") else "failed"
@@ -1150,7 +1171,7 @@ class LiveBleAdapter(ScaleAdapter):
                     "Target scale was discovered, but the direct BLE connection did not complete. "
                     "Review the MiniPC capture for GATT details."
                 )
-        elif self._target_addresses:
+        elif not matched_targets and self._target_addresses:
             message = (
                 "The configured target scale was not seen during the live scan window. "
                 "Wake the scale and keep it active while the MiniPC is scanning."
