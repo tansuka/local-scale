@@ -6,6 +6,7 @@ import { formatDate } from "../lib/dates";
 
 type ChartPanelProps = {
   charts?: ChartResponse | null;
+  theme?: "light" | "dark";
 };
 
 const METRIC_OPTIONS = [
@@ -38,7 +39,19 @@ function subtractMonths(date: Date, months: number): Date {
   return new Date(date.getFullYear(), date.getMonth() - months, date.getDate());
 }
 
-export function ChartPanel({ charts }: ChartPanelProps) {
+function readChartTheme() {
+  const styles = getComputedStyle(document.documentElement);
+  return {
+    axisColor: styles.getPropertyValue("--chart-axis-color").trim() || "#64748b",
+    gridColor: styles.getPropertyValue("--chart-grid-color").trim() || "rgba(148, 163, 184, 0.18)",
+    legendColor: styles.getPropertyValue("--chart-legend-color").trim() || "#334155",
+    tooltipBackground:
+      styles.getPropertyValue("--chart-tooltip-background").trim() || "rgba(15, 23, 42, 0.92)",
+    tooltipText: styles.getPropertyValue("--chart-tooltip-text").trim() || "#f8fafc",
+  };
+}
+
+export function ChartPanel({ charts, theme = "light" }: ChartPanelProps) {
   const [range, setRange] = useState<RangeKey>("month");
   const elementRef = useRef<HTMLDivElement | null>(null);
 
@@ -83,12 +96,18 @@ export function ChartPanel({ charts }: ChartPanelProps) {
       return undefined;
     }
     const chart = echarts.init(elementRef.current);
+    const chartTheme = readChartTheme();
     chart.setOption({
       backgroundColor: "transparent",
-      tooltip: { trigger: "axis" },
+      tooltip: {
+        trigger: "axis",
+        backgroundColor: chartTheme.tooltipBackground,
+        borderColor: "transparent",
+        textStyle: { color: chartTheme.tooltipText },
+      },
       legend: {
         top: 0,
-        textStyle: { color: "#f4efe7" },
+        textStyle: { color: chartTheme.legendColor },
       },
       grid: {
         left: 24,
@@ -100,15 +119,15 @@ export function ChartPanel({ charts }: ChartPanelProps) {
       xAxis: {
         type: "time",
         axisLabel: {
-          color: "#e8dcc7",
+          color: chartTheme.axisColor,
           formatter: (value: number) => formatDate(new Date(value)),
         },
-        axisLine: { lineStyle: { color: "#6f5f4d" } },
+        axisLine: { lineStyle: { color: chartTheme.gridColor } },
       },
       yAxis: {
         type: "value",
-        axisLabel: { color: "#e8dcc7" },
-        splitLine: { lineStyle: { color: "rgba(232, 220, 199, 0.12)" } },
+        axisLabel: { color: chartTheme.axisColor },
+        splitLine: { lineStyle: { color: chartTheme.gridColor } },
       },
       series: METRIC_OPTIONS.map((metric) => ({
         name: metric.label,
@@ -132,7 +151,7 @@ export function ChartPanel({ charts }: ChartPanelProps) {
       observer?.disconnect();
       chart.dispose();
     };
-  }, [filteredCharts, hasSeries]);
+  }, [filteredCharts, hasSeries, theme]);
 
   return (
     <section className="panel chart-panel">

@@ -31,7 +31,9 @@ import { TrendsPanel } from "./components/TrendsPanel";
 import { formatDateTime } from "./lib/dates";
 
 const STORAGE_KEY = "local-scale:selected-profile-id";
+const THEME_STORAGE_KEY = "local-scale:theme";
 type TabKey = "overview" | "trends" | "import";
+type ThemeMode = "light" | "dark";
 
 function readSelectedProfileId(): number | null {
   const rawValue = window.localStorage.getItem(STORAGE_KEY);
@@ -49,6 +51,11 @@ function writeSelectedProfileId(profileId: number) {
   window.history.replaceState({}, "", url);
 }
 
+function readTheme(): ThemeMode {
+  const rawValue = window.localStorage.getItem(THEME_STORAGE_KEY);
+  return rawValue === "dark" ? "dark" : "light";
+}
+
 function selectedProfileFromQuery(): number | null {
   const params = new URLSearchParams(window.location.search);
   const value = params.get("profile");
@@ -61,6 +68,7 @@ function selectedProfileFromQuery(): number | null {
 
 export function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const [theme, setTheme] = useState<ThemeMode>(readTheme);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<number | null>(
     selectedProfileFromQuery() ?? readSelectedProfileId(),
@@ -100,6 +108,12 @@ export function App() {
       .then(setCurrentSession)
       .catch((caughtError: Error) => setError(caughtError.message));
   }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }, [theme]);
 
   useEffect(() => {
     if (selectedProfileId === null) {
@@ -165,6 +179,17 @@ export function App() {
             <h1>Local Scale</h1>
           </div>
           <div className="shell-controls">
+            <button
+              aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+              aria-pressed={theme === "dark"}
+              className="theme-toggle ghost-button"
+              onClick={() =>
+                setTheme((currentTheme) => (currentTheme === "light" ? "dark" : "light"))
+              }
+              type="button"
+            >
+              {theme === "light" ? "Dark mode" : "Light mode"}
+            </button>
             <ProfileSwitcher
               profiles={profiles}
               selectedProfileId={selectedProfileId}
@@ -269,6 +294,7 @@ export function App() {
               measurements={measurements}
               profiles={profiles}
               selectedProfileId={selectedProfileId}
+              theme={theme}
               onUpdateMeasurement={async (measurementId, payload) => {
                 const updated = await updateMeasurement(measurementId, payload);
                 setMeasurements((current) =>
