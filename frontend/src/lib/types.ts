@@ -72,6 +72,28 @@ export type DashboardPayload = {
   selected_profile_id?: number | null;
   measurements: Measurement[];
   charts?: ChartResponse | null;
+  health_analysis?: HealthAnalysis | null;
+};
+
+export type HealthAnalysis = {
+  status: "ready" | "not_configured" | "no_data" | "error";
+  summary?: string | null;
+  concern_level?: "low" | "moderate" | "high" | null;
+  highlights: string[];
+  generated_at?: string | null;
+  measurement_count: number;
+  is_stale: boolean;
+  error_message?: string | null;
+};
+
+export type LlmSettings = {
+  base_url: string;
+  model: string;
+  has_api_key: boolean;
+  api_key_preview?: string | null;
+  prompt_path: string;
+  prompt_loaded: boolean;
+  prompt_error?: string | null;
 };
 
 export type ImportPreviewRow = {

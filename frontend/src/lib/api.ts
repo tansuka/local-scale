@@ -1,8 +1,10 @@
 import type {
   ChartResponse,
   DashboardPayload,
+  HealthAnalysis,
   ImportCommitResponse,
   ImportPreviewResponse,
+  LlmSettings,
   Measurement,
   Profile,
   WeighSession,
@@ -119,5 +121,28 @@ export async function commitImport(
   return request<ImportCommitResponse>("/api/imports/csv/commit", {
     method: "POST",
     body,
+  });
+}
+
+export function fetchLlmSettings(): Promise<LlmSettings> {
+  return request<LlmSettings>("/api/admin/llm-settings");
+}
+
+export function updateLlmSettings(payload: {
+  base_url: string;
+  model: string;
+  api_key?: string | null;
+  clear_api_key?: boolean;
+}): Promise<LlmSettings> {
+  return request<LlmSettings>("/api/admin/llm-settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function runHealthAnalysis(profileId: number): Promise<HealthAnalysis> {
+  return request<HealthAnalysis>(`/api/admin/profiles/${profileId}/health-analysis/run`, {
+    method: "POST",
   });
 }

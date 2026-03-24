@@ -13,6 +13,7 @@ from app.db import Database
 from app.services.adapters import build_scale_adapter
 from app.services.anthropometric import backfill_missing_measurements
 from app.services.events import EventBroker
+from app.services.llm_health import LlmHealthAnalyzer
 from app.services.seed import seed_demo_data
 from app.services.sessions import SessionManager
 
@@ -22,6 +23,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     database = Database(settings)
     events = EventBroker()
     adapter = build_scale_adapter(settings)
+    health_analyzer = LlmHealthAnalyzer(prompt_path=settings.llm_analysis_prompt_path)
     session_manager = SessionManager(
         database=database,
         adapter=adapter,
@@ -43,6 +45,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.db = database
     app.state.events = events
+    app.state.health_analyzer = health_analyzer
     app.state.session_manager = session_manager
 
     app.add_middleware(

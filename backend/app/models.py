@@ -35,6 +35,25 @@ class Profile(Base):
     )
 
     measurements: Mapped[list["Measurement"]] = relationship(back_populates="profile")
+    health_analysis: Mapped["ProfileHealthAnalysis | None"] = relationship(
+        back_populates="profile",
+        cascade="all, delete-orphan",
+    )
+
+
+class AppSettings(Base):
+    __tablename__ = "app_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    llm_base_url: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    llm_model: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    llm_api_key: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        onupdate=utcnow,
+        nullable=False,
+    )
 
 
 class ScaleDevice(Base):
@@ -114,3 +133,22 @@ class WeighSession(Base):
     anomaly_score: Mapped[float | None] = mapped_column(Float)
     requires_confirmation: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text)
+
+
+class ProfileHealthAnalysis(Base):
+    __tablename__ = "profile_health_analyses"
+
+    profile_id: Mapped[int] = mapped_column(ForeignKey("profiles.id"), primary_key=True)
+    latest_measurement_id: Mapped[int | None] = mapped_column(ForeignKey("measurements.id"))
+    measurement_ids_json: Mapped[list[int]] = mapped_column(JSON, default=list, nullable=False)
+    measurement_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    prompt_hash: Mapped[str | None] = mapped_column(String(64))
+    settings_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    summary: Mapped[str | None] = mapped_column(Text)
+    concern_level: Mapped[str | None] = mapped_column(String(32))
+    highlights_json: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    is_stale: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text)
+
+    profile: Mapped[Profile] = relationship(back_populates="health_analysis")

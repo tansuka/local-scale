@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Reques
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, get_events, get_session_manager
+from app.api.deps import get_db, get_events, get_health_analyzer, get_session_manager
 from app.models import Measurement
 from app.repositories.measurements import (
     chart_series,
@@ -20,8 +20,11 @@ from app.schemas import (
     ChartPoint,
     ChartResponse,
     DashboardPayload,
+    HealthAnalysisRead,
     ImportCommitResponse,
     ImportPreviewResponse,
+    LlmSettingsRead,
+    LlmSettingsUpdateRequest,
     MeasurementRead,
     MeasurementReassignRequest,
     MeasurementUpdateRequest,
@@ -32,6 +35,7 @@ from app.schemas import (
 )
 from app.services.events import EventBroker
 from app.services.imports import commit_csv_upload, preview_csv_upload
+from app.services.llm_health import LlmHealthAnalyzer
 from app.services.metrics import measurement_to_chart_value, normalize_measurement
 from app.services.sessions import SessionManager
 
@@ -211,19 +215,54 @@ def get_charts(profile_id: int, db: Session = Depends(get_db)) -> ChartResponse:
 def get_dashboard(
     profile_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
+    health_analyzer: LlmHealthAnalyzer = Depends(get_health_analyzer),
 ) -> DashboardPayload:
     profiles = list_profiles(db)
     selected_profile = profile_id or (profiles[0].id if profiles else None)
     measurements = list_measurements(db, profile_id=selected_profile, limit=365) if selected_profile else []
     charts = None
+    health_analysis: HealthAnalysisRead | None = None
     if selected_profile is not None:
         charts = _build_chart_response(selected_profile, chart_series(db, selected_profile)["rows"])
+        profile = get_profile(db, selected_profile)
+        if profile is not None:
+            health_analysis = health_analyzer.resolve_analysis(db, profile)
     return DashboardPayload(
         profiles=[ProfileRead.model_validate(item) for item in profiles],
         selected_profile_id=selected_profile,
         measurements=[MeasurementRead.model_validate(item) for item in measurements],
         charts=charts,
+        health_analysis=health_analysis,
     )
+
+
+@router.get("/admin/llm-settings", response_model=LlmSettingsRead)
+def get_admin_llm_settings(
+    db: Session = Depends(get_db),
+    health_analyzer: LlmHealthAnalyzer = Depends(get_health_analyzer),
+) -> LlmSettingsRead:
+    return health_analyzer.get_settings_view(db)
+
+
+@router.put("/admin/llm-settings", response_model=LlmSettingsRead)
+def put_admin_llm_settings(
+    payload: LlmSettingsUpdateRequest,
+    db: Session = Depends(get_db),
+    health_analyzer: LlmHealthAnalyzer = Depends(get_health_analyzer),
+) -> LlmSettingsRead:
+    return health_analyzer.save_settings(db, payload)
+
+
+@router.post("/admin/profiles/{profile_id}/health-analysis/run", response_model=HealthAnalysisRead)
+def post_run_profile_health_analysis(
+    profile_id: int,
+    db: Session = Depends(get_db),
+    health_analyzer: LlmHealthAnalyzer = Depends(get_health_analyzer),
+) -> HealthAnalysisRead:
+    profile = get_profile(db, profile_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    return health_analyzer.resolve_analysis(db, profile, force_refresh=True)
 
 
 @router.post("/sessions/start", response_model=WeighSessionRead, status_code=202)

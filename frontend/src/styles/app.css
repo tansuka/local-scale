@@ -883,6 +883,60 @@ textarea {
   font-size: 1rem;
 }
 
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.admin-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.admin-form-grid span {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.admin-form-grid input {
+  border-radius: 16px;
+  border: 1px solid var(--input-border);
+  background: var(--input-background);
+  color: var(--input-text);
+  padding: 0.75rem 0.85rem;
+}
+
+.admin-form-full {
+  grid-column: 1 / -1;
+}
+
+.admin-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+.admin-detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.admin-detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: baseline;
+  color: var(--text-secondary);
+}
+
+.admin-detail-row span {
+  color: var(--text-muted);
+}
+
 .waist-editor {
   display: flex;
   flex-direction: column;
@@ -923,6 +977,70 @@ textarea {
 
 .profile-summary-hero {
   min-height: 260px;
+}
+
+.analysis-block {
+  margin-top: 0.75rem;
+}
+
+.analysis-heading {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.analysis-concern-pill {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 0.26rem 0.7rem;
+  font-size: 0.78rem;
+}
+
+.analysis-concern-pill.low {
+  background: var(--healthy-background);
+  color: var(--healthy-text);
+}
+
+.analysis-concern-pill.moderate {
+  background: var(--high-background);
+  color: var(--high-text);
+}
+
+.analysis-concern-pill.high {
+  background: var(--error-surface);
+  color: var(--danger-text);
+}
+
+.analysis-window-copy {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.analysis-summary {
+  margin: 0.65rem 0 0;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.analysis-highlights {
+  margin: 0.7rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--text-secondary);
+}
+
+.analysis-highlights li + li {
+  margin-top: 0.35rem;
+}
+
+.analysis-note {
+  margin: 0.7rem 0 0;
+  font-size: 0.88rem;
+}
+
+.analysis-meta {
+  margin: 0.8rem 0 0;
+  font-size: 0.92rem;
 }
 
 .summary-strip {
@@ -1128,5 +1246,14 @@ textarea {
 
   .admin-grid {
     grid-template-columns: 1fr;
+  }
+
+  .admin-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-detail-row {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }

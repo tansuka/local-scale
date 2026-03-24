@@ -149,3 +149,36 @@ class DashboardPayload(BaseModel):
     selected_profile_id: int | None
     measurements: list[MeasurementRead]
     charts: ChartResponse | None = None
+    health_analysis: "HealthAnalysisRead | None" = None
+
+
+class HealthAnalysisRead(BaseModel):
+    status: str
+    summary: str | None = None
+    concern_level: str | None = None
+    highlights: list[str] = Field(default_factory=list)
+    generated_at: datetime | None = None
+    measurement_count: int = 0
+    is_stale: bool = False
+    error_message: str | None = None
+
+    @field_serializer("generated_at", when_used="json-unless-none")
+    def serialize_generated_at(self, value: datetime) -> str:
+        return _serialize_datetime_assuming_utc(value)
+
+
+class LlmSettingsRead(BaseModel):
+    base_url: str
+    model: str
+    has_api_key: bool
+    api_key_preview: str | None = None
+    prompt_path: str
+    prompt_loaded: bool
+    prompt_error: str | None = None
+
+
+class LlmSettingsUpdateRequest(BaseModel):
+    base_url: str = ""
+    model: str = ""
+    api_key: str | None = None
+    clear_api_key: bool = False

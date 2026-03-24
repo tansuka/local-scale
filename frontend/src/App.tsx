@@ -17,15 +17,18 @@ import {
 import type {
   ChartResponse,
   DashboardPayload,
+  HealthAnalysis,
   LiveEvent,
   Measurement,
   Profile,
   WeighSession,
 } from "./lib/types";
+import { AdminPanel } from "./components/AdminPanel";
 import { ImportPanel } from "./components/ImportPanel";
 import { LiveSessionCard } from "./components/LiveSessionCard";
 import { MetricPanel } from "./components/MetricPanel";
 import { ProfileForm } from "./components/ProfileForm";
+import { ProfileHealthSummary } from "./components/ProfileHealthSummary";
 import { ProfileSwitcher } from "./components/ProfileSwitcher";
 import { TrendsPanel } from "./components/TrendsPanel";
 import { formatDateTime } from "./lib/dates";
@@ -121,6 +124,7 @@ export function App() {
   );
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
   const [charts, setCharts] = useState<ChartResponse | null>(null);
+  const [healthAnalysis, setHealthAnalysis] = useState<HealthAnalysis | null>(null);
   const [currentSession, setCurrentSession] = useState<WeighSession | null>(null);
   const [liveDetails, setLiveDetails] = useState<Record<string, unknown> | null>(null);
   const [loadingStart, setLoadingStart] = useState(false);
@@ -145,6 +149,7 @@ export function App() {
     }
     setMeasurements(payload.measurements);
     setCharts(payload.charts ?? null);
+    setHealthAnalysis(payload.health_analysis ?? null);
   };
 
   useEffect(() => {
@@ -222,6 +227,9 @@ export function App() {
       ) {
         setMeasurements((current) => [payload.measurement, ...current].slice(0, 365));
         void fetchCharts(payload.measurement.profile_id).then(setCharts);
+        void hydrateDashboard(payload.measurement.profile_id).catch((caughtError: Error) =>
+          setError(caughtError.message),
+        );
       }
     };
 
@@ -343,15 +351,11 @@ export function App() {
                 <section className="panel profile-summary-card profile-summary-hero">
                   <p className="eyebrow">Selected Profile</p>
                   <h2>{selectedProfile?.name ?? "No profile selected"}</h2>
-                  <p className="muted">
-                    {selectedProfile
-                      ? `${selectedProfile.sex}, ${selectedProfile.height_cm} cm. ${
-                          pendingCount > 0
-                            ? `${pendingCount} weigh-in${pendingCount > 1 ? "s" : ""} need review.`
-                            : "Everything is saved cleanly."
-                        }`
-                      : "Choose a profile to see a personal dashboard."}
-                  </p>
+                  <ProfileHealthSummary
+                    analysis={healthAnalysis}
+                    pendingCount={pendingCount}
+                    profile={selectedProfile}
+                  />
                   <div className="summary-strip">
                     <div>
                       <span>Last weight</span>
@@ -469,33 +473,10 @@ export function App() {
 
           {activeTab === "admin" ? (
             <div className="tab-content">
-              <section className="panel admin-panel">
-                <div className="panel-heading">
-                  <div>
-                    <p className="eyebrow">Admin Panel</p>
-                    <h2>Application-wide configuration</h2>
-                  </div>
-                </div>
-                <p className="muted admin-copy">
-                  This area is reserved for app-level controls that should apply to every user,
-                  not just the selected profile.
-                </p>
-                <div className="admin-grid">
-                  <article className="admin-card">
-                    <h3>Global Settings</h3>
-                    <p className="muted">
-                      Centralize device behavior, import defaults, and other shared app rules here.
-                    </p>
-                  </article>
-                  <article className="admin-card">
-                    <h3>Next Step</h3>
-                    <p className="muted">
-                      We can plug the first real application configuration controls into this panel
-                      next.
-                    </p>
-                  </article>
-                </div>
-              </section>
+              <AdminPanel
+                selectedProfile={selectedProfile}
+                onAnalysisUpdated={(analysis) => setHealthAnalysis(analysis)}
+              />
             </div>
           ) : null}
         </section>

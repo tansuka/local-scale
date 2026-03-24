@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.db import Database
 from app.services.events import EventBroker
+from app.services.llm_health import LlmHealthAnalyzer
 from app.services.sessions import SessionManager
 
 
@@ -26,3 +27,7 @@ def get_session_manager(connection: HTTPConnection) -> SessionManager:
 
 def get_events(connection: HTTPConnection) -> EventBroker:
     return connection.app.state.events
+
+
+def get_health_analyzer(connection: HTTPConnection) -> LlmHealthAnalyzer:
+    return connection.app.state.health_analyzer

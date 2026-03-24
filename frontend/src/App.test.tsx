@@ -19,6 +19,16 @@ const dashboardPayload = {
   selected_profile_id: 1,
   measurements: [],
   charts: { profile_id: 1, series: {} },
+  health_analysis: {
+    status: "ready",
+    summary: "Stable overall health trend.",
+    concern_level: "low",
+    highlights: ["Weight is steady."],
+    generated_at: "2026-03-24T10:00:00Z",
+    measurement_count: 4,
+    is_stale: false,
+    error_message: null,
+  },
 };
 
 describe("App", () => {
@@ -109,5 +119,41 @@ describe("App", () => {
       expect(document.documentElement.dataset.theme).toBe("dark");
       expect(document.documentElement.style.colorScheme).toBe("dark");
     });
+  });
+
+  it("renders the LLM health summary in the selected profile card", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => dashboardPayload,
+        status: 200,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => null,
+        status: 200,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => dashboardPayload,
+        status: 200,
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal(
+      "WebSocket",
+      class {
+        readyState = 1;
+        onmessage: ((event: MessageEvent) => void) | null = null;
+        onerror: (() => void) | null = null;
+        close() {}
+        send() {}
+      },
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText("Stable overall health trend.")).toBeInTheDocument();
+    expect(screen.getByText("Low concern")).toBeInTheDocument();
   });
 });
