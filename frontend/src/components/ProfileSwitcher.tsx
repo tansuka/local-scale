@@ -3,18 +3,22 @@ import type { Profile } from "../lib/types";
 type ProfileSwitcherProps = {
   profiles: Profile[];
   selectedProfileId?: number | null;
+  label?: string;
+  stacked?: boolean;
   onSelect: (profileId: number) => void;
 };
 
 export function ProfileSwitcher({
   profiles,
   selectedProfileId,
+  label = "User",
+  stacked = false,
   onSelect,
 }: ProfileSwitcherProps) {
   return (
-    <div className="profile-switcher">
+    <div className={`profile-switcher ${stacked ? "stacked" : ""}`}>
       <label className="profile-switcher-label" htmlFor="profile-switcher">
-        User
+        {label}
       </label>
       <select
         id="profile-switcher"

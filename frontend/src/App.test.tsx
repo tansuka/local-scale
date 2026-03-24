@@ -61,6 +61,8 @@ describe("App", () => {
 
     render(<App />);
 
+    fireEvent.click(await screen.findByRole("button", { name: "Open user menu" }));
+
     await waitFor(() => {
       expect(screen.getByRole("combobox")).toHaveValue("1");
     });

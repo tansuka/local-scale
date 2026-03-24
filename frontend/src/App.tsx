@@ -32,7 +32,7 @@ import { formatDateTime } from "./lib/dates";
 
 const STORAGE_KEY = "local-scale:selected-profile-id";
 const THEME_STORAGE_KEY = "local-scale:theme";
-type TabKey = "overview" | "trends" | "import";
+type TabKey = "overview" | "trends" | "profile" | "admin";
 type ThemeMode = "light" | "dark";
 
 function readSelectedProfileId(): number | null {
@@ -66,9 +66,55 @@ function selectedProfileFromQuery(): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function ThemeIcon({ theme }: { theme: ThemeMode }) {
+  if (theme === "light") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <path
+          d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"
+          fill="none"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.8"
+        />
+      </svg>
+    );
+  }
+
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="4.1" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path
+        d="M12 2.5v2.2M12 19.3v2.2M21.5 12h-2.2M4.7 12H2.5M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6M18.7 18.7l-1.6-1.6M6.9 6.9 5.3 5.3"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}
+
+function UserIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path
+        d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2.2c-4.1 0-7.4 2.3-7.4 5.2v.1h14.8v-.1c0-2.9-3.3-5.2-7.4-5.2Z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}
+
 export function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [theme, setTheme] = useState<ThemeMode>(readTheme);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<number | null>(
     selectedProfileFromQuery() ?? readSelectedProfileId(),
@@ -81,6 +127,7 @@ export function App() {
   const [loadingCancel, setLoadingCancel] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const websocketRef = useRef<WebSocket | null>(null);
+  const userMenuRef = useRef<HTMLDivElement | null>(null);
 
   const selectedProfile = useMemo(
     () => profiles.find((profile) => profile.id === selectedProfileId) ?? null,
@@ -114,6 +161,35 @@ export function App() {
     document.documentElement.style.colorScheme = theme;
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (!userMenuOpen) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (
+        userMenuRef.current &&
+        event.target instanceof Node &&
+        !userMenuRef.current.contains(event.target)
+      ) {
+        setUserMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setUserMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [userMenuOpen]);
 
   useEffect(() => {
     if (selectedProfileId === null) {
@@ -165,7 +241,6 @@ export function App() {
   const tabItems: Array<{ key: TabKey; label: string }> = [
     { key: "overview", label: "Overview" },
     { key: "trends", label: "Trends" },
-    { key: "import", label: "Settings" },
   ];
 
   return (
@@ -182,22 +257,69 @@ export function App() {
             <button
               aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
               aria-pressed={theme === "dark"}
-              className="theme-toggle ghost-button"
+              className="theme-toggle ghost-button icon-button"
               onClick={() =>
                 setTheme((currentTheme) => (currentTheme === "light" ? "dark" : "light"))
               }
               type="button"
             >
-              {theme === "light" ? "Dark mode" : "Light mode"}
+              <ThemeIcon theme={theme} />
             </button>
-            <ProfileSwitcher
-              profiles={profiles}
-              selectedProfileId={selectedProfileId}
-              onSelect={(profileId) => {
-                setSelectedProfileId(profileId);
-                writeSelectedProfileId(profileId);
-              }}
-            />
+            <div className="user-menu" ref={userMenuRef}>
+              <button
+                aria-expanded={userMenuOpen}
+                aria-haspopup="menu"
+                aria-label="Open user menu"
+                className="ghost-button icon-button user-menu-trigger"
+                onClick={() => setUserMenuOpen((current) => !current)}
+                type="button"
+              >
+                <UserIcon />
+              </button>
+              {userMenuOpen ? (
+                <div className="user-menu-popover" role="menu">
+                  <div className="user-menu-header">
+                    <p className="eyebrow">Current User</p>
+                    <strong>{selectedProfile?.name ?? "No user selected"}</strong>
+                  </div>
+                  <div className="user-menu-actions">
+                    <button
+                      className={`user-menu-action ${activeTab === "profile" ? "active" : ""}`}
+                      onClick={() => {
+                        setActiveTab("profile");
+                        setUserMenuOpen(false);
+                      }}
+                      type="button"
+                    >
+                      Profile
+                    </button>
+                    <button
+                      className={`user-menu-action ${activeTab === "admin" ? "active" : ""}`}
+                      onClick={() => {
+                        setActiveTab("admin");
+                        setUserMenuOpen(false);
+                      }}
+                      type="button"
+                    >
+                      Admin Panel
+                    </button>
+                  </div>
+                  <div className="user-menu-section">
+                    <ProfileSwitcher
+                      label="Switch user"
+                      profiles={profiles}
+                      selectedProfileId={selectedProfileId}
+                      stacked
+                      onSelect={(profileId) => {
+                        setSelectedProfileId(profileId);
+                        writeSelectedProfileId(profileId);
+                        setUserMenuOpen(false);
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
         </header>
         {error ? <div className="error-banner">{error}</div> : null}
@@ -318,7 +440,7 @@ export function App() {
             />
           ) : null}
 
-          {activeTab === "import" ? (
+          {activeTab === "profile" ? (
             <div className="tab-content">
               <div className="settings-grid">
                 <ProfileForm
@@ -342,6 +464,38 @@ export function App() {
                   }
                 />
               </div>
+            </div>
+          ) : null}
+
+          {activeTab === "admin" ? (
+            <div className="tab-content">
+              <section className="panel admin-panel">
+                <div className="panel-heading">
+                  <div>
+                    <p className="eyebrow">Admin Panel</p>
+                    <h2>Application-wide configuration</h2>
+                  </div>
+                </div>
+                <p className="muted admin-copy">
+                  This area is reserved for app-level controls that should apply to every user,
+                  not just the selected profile.
+                </p>
+                <div className="admin-grid">
+                  <article className="admin-card">
+                    <h3>Global Settings</h3>
+                    <p className="muted">
+                      Centralize device behavior, import defaults, and other shared app rules here.
+                    </p>
+                  </article>
+                  <article className="admin-card">
+                    <h3>Next Step</h3>
+                    <p className="muted">
+                      We can plug the first real application configuration controls into this panel
+                      next.
+                    </p>
+                  </article>
+                </div>
+              </section>
             </div>
           ) : null}
         </section>
