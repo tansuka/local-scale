@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_events, get_health_analyzer, get_session_manager
+from app.db import Database
 from app.models import Measurement
 from app.repositories.measurements import (
     chart_series,
@@ -40,6 +42,21 @@ from app.services.metrics import measurement_to_chart_value, normalize_measureme
 from app.services.sessions import SessionManager
 
 router = APIRouter()
+
+
+def _refresh_health_analysis_in_background(
+    database: Database,
+    analyzer: LlmHealthAnalyzer,
+    profile_id: int,
+) -> None:
+    try:
+        with database.make_session() as db:
+            profile = get_profile(db, profile_id)
+            if profile is None:
+                return
+            analyzer.resolve_analysis(db, profile, force_refresh=True)
+    finally:
+        analyzer.mark_refresh_finished(profile_id)
 
 
 def _measurement_normalize_payload(measurement: Measurement, *, source_metric_map: dict[str, str]) -> dict:
@@ -213,6 +230,7 @@ def get_charts(profile_id: int, db: Session = Depends(get_db)) -> ChartResponse:
 
 @router.get("/dashboard", response_model=DashboardPayload)
 def get_dashboard(
+    request: Request,
     profile_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
     health_analyzer: LlmHealthAnalyzer = Depends(get_health_analyzer),
@@ -226,7 +244,15 @@ def get_dashboard(
         charts = _build_chart_response(selected_profile, chart_series(db, selected_profile)["rows"])
         profile = get_profile(db, selected_profile)
         if profile is not None:
-            health_analysis = health_analyzer.resolve_analysis(db, profile)
+            analysis_snapshot = health_analyzer.analysis_snapshot(db, profile)
+            health_analysis = analysis_snapshot.analysis
+            if analysis_snapshot.should_refresh and health_analyzer.mark_refresh_started(profile.id):
+                database: Database = request.app.state.db
+                threading.Thread(
+                    target=_refresh_health_analysis_in_background,
+                    args=(database, health_analyzer, profile.id),
+                    daemon=True,
+                ).start()
     return DashboardPayload(
         profiles=[ProfileRead.model_validate(item) for item in profiles],
         selected_profile_id=selected_profile,

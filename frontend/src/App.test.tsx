@@ -24,6 +24,7 @@ const dashboardPayload = {
     summary: "Stable overall health trend.",
     concern_level: "low",
     highlights: ["Weight is steady."],
+    advice: "Keep your current routine steady.",
     generated_at: "2026-03-24T10:00:00Z",
     measurement_count: 4,
     is_stale: false,
@@ -155,5 +156,6 @@ describe("App", () => {
 
     expect(await screen.findByText("Stable overall health trend.")).toBeInTheDocument();
     expect(screen.getByText("Low concern")).toBeInTheDocument();
+    expect(screen.getByText(/Keep your current routine steady/)).toBeInTheDocument();
   });
 });

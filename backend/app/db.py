@@ -63,11 +63,20 @@ class Database:
                     column_name="visceral_adiposity_index",
                     column_definition="FLOAT",
                 )
+                self._ensure_column(
+                    connection,
+                    table_name="profile_health_analyses",
+                    column_name="advice",
+                    column_definition="TEXT",
+                )
                 self._migrate_profile_waist_to_measurements(connection)
 
     @staticmethod
     def _ensure_column(connection, *, table_name: str, column_name: str, column_definition: str) -> None:
-        rows = connection.execute(text(f"PRAGMA table_info({table_name})")).mappings().all()
+        try:
+            rows = connection.execute(text(f"PRAGMA table_info({table_name})")).mappings().all()
+        except Exception:
+            return
         existing = {str(row["name"]) for row in rows}
         if column_name in existing:
             return

@@ -53,6 +53,7 @@ describe("AdminPanel", () => {
           summary: "Fresh analysis summary.",
           concern_level: "moderate",
           highlights: ["Hydration dipped slightly."],
+          advice: "Drink a little more water tomorrow.",
           generated_at: "2026-03-24T10:00:00Z",
           measurement_count: 7,
           is_stale: false,

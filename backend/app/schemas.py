@@ -157,6 +157,7 @@ class HealthAnalysisRead(BaseModel):
     summary: str | None = None
     concern_level: str | None = None
     highlights: list[str] = Field(default_factory=list)
+    advice: str | None = None
     generated_at: datetime | None = None
     measurement_count: int = 0
     is_stale: bool = False

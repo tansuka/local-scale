@@ -76,10 +76,11 @@ export type DashboardPayload = {
 };
 
 export type HealthAnalysis = {
-  status: "ready" | "not_configured" | "no_data" | "error";
+  status: "ready" | "pending" | "not_configured" | "no_data" | "error";
   summary?: string | null;
   concern_level?: "low" | "moderate" | "high" | null;
   highlights: string[];
+  advice?: string | null;
   generated_at?: string | null;
   measurement_count: number;
   is_stale: boolean;

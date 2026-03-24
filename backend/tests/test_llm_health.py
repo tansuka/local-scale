@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime, timedelta, timezone
+
+import httpx
 
 from app.models import Measurement
 from app.repositories.app_settings import get_app_settings
@@ -104,6 +107,7 @@ def test_manual_run_uses_latest_seven_measurements(client):
                 "summary": "Stable overall trend.",
                 "concern_level": "low",
                 "highlights": ["Weight is moving gradually.", "No abrupt red flags."],
+                "advice": "Keep tracking the same routine.",
             }
         )
 
@@ -133,6 +137,7 @@ def test_dashboard_returns_stale_cached_analysis_when_refresh_fails(client):
             "summary": "Initial cached summary.",
             "concern_level": "moderate",
             "highlights": ["Baseline summary"],
+            "advice": "Stay consistent with your routine.",
         }
     )
     first_run = client.post(f"/api/admin/profiles/{profile_id}/health-analysis/run")
@@ -156,7 +161,18 @@ def test_dashboard_returns_stale_cached_analysis_when_refresh_fails(client):
     assert analysis["status"] == "ready"
     assert analysis["is_stale"] is True
     assert analysis["summary"] == "Initial cached summary."
-    assert "unavailable" in analysis["error_message"].lower()
+
+    failure_seen = None
+    for _ in range(20):
+        time.sleep(0.02)
+        refreshed = client.get(f"/api/dashboard?profile_id={profile_id}")
+        refreshed_analysis = refreshed.json()["health_analysis"]
+        if refreshed_analysis["error_message"]:
+            failure_seen = refreshed_analysis
+            break
+
+    assert failure_seen is not None
+    assert "unavailable" in failure_seen["error_message"].lower()
 
 
 def test_prompt_hash_change_invalidates_cache(client):
@@ -169,6 +185,7 @@ def test_prompt_hash_change_invalidates_cache(client):
             "summary": "Prompt version one.",
             "concern_level": "low",
             "highlights": ["Version one"],
+            "advice": "Version one advice.",
         }
     )
     first_run = client.post(f"/api/admin/profiles/{profile_id}/health-analysis/run")
@@ -186,9 +203,115 @@ def test_prompt_hash_change_invalidates_cache(client):
             "summary": "Prompt version two.",
             "concern_level": "low",
             "highlights": ["Version two"],
+            "advice": "Version two advice.",
         }
     )
 
     dashboard = client.get(f"/api/dashboard?profile_id={profile_id}")
     assert dashboard.status_code == 200
-    assert dashboard.json()["health_analysis"]["summary"] == "Prompt version two."
+    assert dashboard.json()["health_analysis"]["summary"] == "Prompt version one."
+
+    refreshed_summary = None
+    for _ in range(20):
+        time.sleep(0.02)
+        refreshed = client.get(f"/api/dashboard?profile_id={profile_id}")
+        refreshed_summary = refreshed.json()["health_analysis"]["summary"]
+        if refreshed_summary == "Prompt version two.":
+            break
+
+    assert refreshed_summary == "Prompt version two."
+
+
+def test_llm_request_retries_without_response_format_for_compatible_400(client):
+    profile_id = _selected_profile_id(client)
+    _configure_llm(client)
+    analyzer = client.app.state.health_analyzer
+
+    calls: list[dict[str, object]] = []
+
+    def fake_post_completion(_client, *, url, headers, body):
+        calls.append(body)
+        if len(calls) == 1:
+            request = httpx.Request("POST", url, headers=headers)
+            response = httpx.Response(
+                400,
+                request=request,
+                text='{"error":"response_format json_object is not supported"}',
+            )
+            raise httpx.HTTPStatusError("Bad Request", request=request, response=response)
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "summary": "Retry succeeded.",
+                                "concern_level": "low",
+                                "highlights": ["Fallback request worked."],
+                                "advice": "Keep the current routine steady.",
+                            }
+                        )
+                    }
+                }
+            ]
+        }
+
+    analyzer._post_completion = fake_post_completion
+
+    response = client.post(f"/api/admin/profiles/{profile_id}/health-analysis/run")
+    assert response.status_code == 200
+    assert response.json()["summary"] == "Retry succeeded."
+    assert response.json()["advice"] == "Keep the current routine steady."
+    assert "response_format" in calls[0]
+    assert "response_format" not in calls[1]
+
+
+def test_llm_request_surfaces_response_body_for_non_compatible_400(client):
+    profile_id = _selected_profile_id(client)
+    _configure_llm(client)
+    analyzer = client.app.state.health_analyzer
+
+    def fake_post_completion(_client, *, url, headers, body):
+        request = httpx.Request("POST", url, headers=headers)
+        response = httpx.Response(
+            400,
+            request=request,
+            text='{"error":"model not loaded"}',
+        )
+        raise httpx.HTTPStatusError("Bad Request", request=request, response=response)
+
+    analyzer._post_completion = fake_post_completion
+
+    response = client.post(f"/api/admin/profiles/{profile_id}/health-analysis/run")
+    assert response.status_code == 200
+    assert response.json()["status"] == "error"
+    assert "model not loaded" in response.json()["error_message"]
+
+
+def test_dashboard_returns_pending_analysis_immediately_when_cache_is_missing(client):
+    profile_id = _selected_profile_id(client)
+    _configure_llm(client)
+    analyzer = client.app.state.health_analyzer
+
+    def slow_request_completion(**_kwargs):
+        import time
+
+        time.sleep(0.25)
+        return json.dumps(
+            {
+                "summary": "Background summary.",
+                "concern_level": "low",
+                "highlights": ["Background refresh finished."],
+                "advice": "Keep your routine steady.",
+            }
+        )
+
+    analyzer._request_completion = slow_request_completion
+
+    started = datetime.now(timezone.utc)
+    response = client.get(f"/api/dashboard?profile_id={profile_id}")
+    elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+
+    assert response.status_code == 200
+    assert response.json()["health_analysis"]["status"] == "pending"
+    assert elapsed < 0.2

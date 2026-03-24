@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -58,6 +59,8 @@ class LlmHealthAnalyzer:
         self._http_client_factory = http_client_factory or (
             lambda: httpx.Client(timeout=30.0, follow_redirects=True)
         )
+        self._refresh_lock = threading.Lock()
+        self._refreshing_profile_ids: set[int] = set()
 
     def get_settings_view(self, db: Session) -> LlmSettingsRead:
         settings = get_app_settings(db)
@@ -93,54 +96,34 @@ class LlmHealthAnalyzer:
         *,
         force_refresh: bool = False,
     ) -> HealthAnalysisRead:
-        measurements_desc = list_measurements(db, profile_id=profile.id, limit=7)
+        snapshot = self.analysis_snapshot(db, profile)
+        if (
+            not force_refresh
+            and snapshot.analysis.status != "pending"
+            and not (snapshot.should_refresh and snapshot.analysis.summary)
+        ):
+            return snapshot.analysis
+
+        measurements_desc = snapshot.measurements_desc
+        cached = snapshot.cached
+        measurement_ids = snapshot.measurement_ids
+        measurement_count = snapshot.measurement_count
+        latest_measurement_id = snapshot.latest_measurement_id
+        app_settings = snapshot.app_settings
+
         if not measurements_desc:
             return HealthAnalysisRead(status="no_data")
 
-        app_settings = get_app_settings(db)
-        cached = get_profile_health_analysis(db, profile.id)
-        measurement_ids = [measurement.id for measurement in measurements_desc]
-        measurement_count = len(measurement_ids)
-        latest_measurement_id = measurement_ids[0]
-
         if not _is_provider_configured(app_settings):
-            return HealthAnalysisRead(
-                status="not_configured",
-                measurement_count=measurement_count,
-                error_message="Set the LLM base URL and model in the admin panel to enable analysis.",
-            )
-
-        cache_matches = cached is not None and self._cache_matches(
-            cached_measurement_ids=list(cached.measurement_ids_json or []),
-            current_measurement_ids=measurement_ids,
-            cached_latest_measurement_id=cached.latest_measurement_id,
-            latest_measurement_id=latest_measurement_id,
-            cached_prompt_hash=cached.prompt_hash,
-            settings_updated_at=cached.settings_updated_at,
-            current_settings_updated_at=app_settings.updated_at,
-        )
-
-        if not force_refresh and cache_matches and cached.summary:
-            return _analysis_to_schema(cached, status="ready")
-
-        ordered_measurements = list(reversed(measurements_desc))
+            return snapshot.analysis
 
         if not self._prompt.loaded:
-            return self._cached_or_error(
-                db,
-                profile_id=profile.id,
-                cached=cached,
-                latest_measurement_id=latest_measurement_id,
-                measurement_ids=measurement_ids,
-                measurement_count=measurement_count,
-                settings_updated_at=app_settings.updated_at,
-                error_message=self._prompt.error or "Prompt file could not be loaded.",
-            )
+            return snapshot.analysis
 
         try:
             generated = self._generate_analysis(
                 profile=profile,
-                measurements=ordered_measurements,
+                measurements=list(reversed(measurements_desc)),
                 app_settings=app_settings,
             )
         except Exception as exc:  # pragma: no cover - exercised via tests with concrete errors
@@ -166,11 +149,145 @@ class LlmHealthAnalyzer:
             summary=generated["summary"],
             concern_level=generated["concern_level"],
             highlights=generated["highlights"],
+            advice=generated["advice"],
             generated_at=utcnow(),
             is_stale=False,
             error_message=None,
         )
         return _analysis_to_schema(stored, status="ready")
+
+    def analysis_snapshot(self, db: Session, profile: Profile) -> "AnalysisSnapshot":
+        measurements_desc = list_measurements(db, profile_id=profile.id, limit=7)
+        if not measurements_desc:
+            return AnalysisSnapshot(
+                analysis=HealthAnalysisRead(status="no_data"),
+                should_refresh=False,
+                measurements_desc=[],
+                cached=None,
+                measurement_ids=[],
+                measurement_count=0,
+                latest_measurement_id=None,
+                app_settings=get_app_settings(db),
+            )
+
+        app_settings = get_app_settings(db)
+        cached = get_profile_health_analysis(db, profile.id)
+        measurement_ids = [measurement.id for measurement in measurements_desc]
+        measurement_count = len(measurement_ids)
+        latest_measurement_id = measurement_ids[0]
+
+        if not _is_provider_configured(app_settings):
+            return AnalysisSnapshot(
+                analysis=HealthAnalysisRead(
+                    status="not_configured",
+                    measurement_count=measurement_count,
+                    error_message="Set the LLM base URL and model in the admin panel to enable analysis.",
+                ),
+                should_refresh=False,
+                measurements_desc=measurements_desc,
+                cached=cached,
+                measurement_ids=measurement_ids,
+                measurement_count=measurement_count,
+                latest_measurement_id=latest_measurement_id,
+                app_settings=app_settings,
+            )
+
+        cache_matches = cached is not None and self._cache_matches(
+            cached_measurement_ids=list(cached.measurement_ids_json or []),
+            current_measurement_ids=measurement_ids,
+            cached_latest_measurement_id=cached.latest_measurement_id,
+            latest_measurement_id=latest_measurement_id,
+            cached_prompt_hash=cached.prompt_hash,
+            settings_updated_at=cached.settings_updated_at,
+            current_settings_updated_at=app_settings.updated_at,
+        )
+
+        if not self._prompt.loaded:
+            if cached is not None and cached.summary:
+                cached_schema = _analysis_to_schema(cached, status="ready")
+                return AnalysisSnapshot(
+                    analysis=cached_schema.model_copy(
+                        update={"is_stale": True, "error_message": self._prompt.error}
+                    ),
+                    should_refresh=False,
+                    measurements_desc=measurements_desc,
+                    cached=cached,
+                    measurement_ids=measurement_ids,
+                    measurement_count=measurement_count,
+                    latest_measurement_id=latest_measurement_id,
+                    app_settings=app_settings,
+                )
+            return AnalysisSnapshot(
+                analysis=HealthAnalysisRead(
+                    status="error",
+                    measurement_count=measurement_count,
+                    error_message=self._prompt.error or "Prompt file could not be loaded.",
+                ),
+                should_refresh=False,
+                measurements_desc=measurements_desc,
+                cached=cached,
+                measurement_ids=measurement_ids,
+                measurement_count=measurement_count,
+                latest_measurement_id=latest_measurement_id,
+                app_settings=app_settings,
+            )
+
+        if cache_matches and cached is not None and cached.summary:
+            return AnalysisSnapshot(
+                analysis=_analysis_to_schema(cached, status="ready"),
+                should_refresh=False,
+                measurements_desc=measurements_desc,
+                cached=cached,
+                measurement_ids=measurement_ids,
+                measurement_count=measurement_count,
+                latest_measurement_id=latest_measurement_id,
+                app_settings=app_settings,
+            )
+
+        if cached is not None and cached.summary:
+            cached_schema = _analysis_to_schema(cached, status="ready")
+            return AnalysisSnapshot(
+                analysis=cached_schema.model_copy(update={"is_stale": True, "error_message": None}),
+                should_refresh=True,
+                measurements_desc=measurements_desc,
+                cached=cached,
+                measurement_ids=measurement_ids,
+                measurement_count=measurement_count,
+                latest_measurement_id=latest_measurement_id,
+                app_settings=app_settings,
+            )
+
+        if cached is not None and cached.error_message and not cache_matches:
+            status = "pending"
+        elif cached is not None and cached.error_message:
+            status = "error"
+        else:
+            status = "pending"
+        return AnalysisSnapshot(
+            analysis=HealthAnalysisRead(
+                status=status,
+                measurement_count=measurement_count,
+                error_message=cached.error_message if cached is not None and status == "error" else None,
+            ),
+            should_refresh=status == "pending",
+            measurements_desc=measurements_desc,
+            cached=cached,
+            measurement_ids=measurement_ids,
+            measurement_count=measurement_count,
+            latest_measurement_id=latest_measurement_id,
+            app_settings=app_settings,
+        )
+
+    def mark_refresh_started(self, profile_id: int) -> bool:
+        with self._refresh_lock:
+            if profile_id in self._refreshing_profile_ids:
+                return False
+            self._refreshing_profile_ids.add(profile_id)
+            return True
+
+    def mark_refresh_finished(self, profile_id: int) -> None:
+        with self._refresh_lock:
+            self._refreshing_profile_ids.discard(profile_id)
 
     def _cached_or_error(
         self,
@@ -196,12 +313,29 @@ class LlmHealthAnalyzer:
                 summary=cached.summary,
                 concern_level=cached.concern_level,
                 highlights=list(cached.highlights_json or []),
+                advice=cached.advice,
                 generated_at=cached.generated_at,
                 is_stale=True,
                 error_message=error_message,
             )
             return _analysis_to_schema(stored, status="ready")
 
+        save_profile_health_analysis(
+            db,
+            profile_id=profile_id,
+            latest_measurement_id=latest_measurement_id,
+            measurement_ids=measurement_ids,
+            measurement_count=measurement_count,
+            prompt_hash=self._prompt.sha256,
+            settings_updated_at=settings_updated_at,
+            summary=None,
+            concern_level=None,
+            highlights=[],
+            advice=None,
+            generated_at=None,
+            is_stale=False,
+            error_message=error_message,
+        )
         return HealthAnalysisRead(
             status="error",
             measurement_count=measurement_count,
@@ -301,14 +435,13 @@ class LlmHealthAnalyzer:
             headers["Authorization"] = f"Bearer {app_settings.llm_api_key}"
         body = {
             "model": app_settings.llm_model,
-            "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": prompt},
                 {
                     "role": "user",
                     "content": (
                         "Analyze the following structured body-composition history. "
-                        "Return JSON only with keys summary, concern_level, and highlights. "
+                        "Return JSON only with keys summary, concern_level, highlights, and advice. "
                         "concern_level must be one of: low, moderate, high. "
                         "highlights must be an array of 1 to 3 short strings.\n\n"
                         f"{json.dumps(request_payload, separators=(',', ':'), ensure_ascii=True)}"
@@ -318,9 +451,23 @@ class LlmHealthAnalyzer:
         }
         url = f"{app_settings.llm_base_url.rstrip('/')}/chat/completions"
         with self._http_client_factory() as client:
-            response = client.post(url, headers=headers, json=body)
-            response.raise_for_status()
-            payload = response.json()
+            try:
+                payload = self._post_completion(
+                    client,
+                    url=url,
+                    headers=headers,
+                    body={**body, "response_format": {"type": "json_object"}},
+                )
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code != 400:
+                    raise _llm_request_error(exc) from exc
+                payload = self._retry_without_response_format(
+                    client,
+                    url=url,
+                    headers=headers,
+                    body=body,
+                    original_error=exc,
+                )
         choices = payload.get("choices")
         if not isinstance(choices, list) or not choices:
             raise ValueError("LLM response did not include any choices.")
@@ -336,6 +483,43 @@ class LlmHealthAnalyzer:
             raise ValueError("LLM response content was empty.")
         return content.strip()
 
+    def _retry_without_response_format(
+        self,
+        client: httpx.Client,
+        *,
+        url: str,
+        headers: dict[str, str],
+        body: dict[str, Any],
+        original_error: httpx.HTTPStatusError,
+    ) -> dict[str, Any]:
+        original_text = _response_text(original_error.response)
+        hints = ("response_format", "json_object", "unsupported", "schema")
+        if original_text and not any(hint in original_text.lower() for hint in hints):
+            raise _llm_request_error(original_error) from original_error
+        try:
+            return self._post_completion(client, url=url, headers=headers, body=body)
+        except httpx.HTTPStatusError as retry_error:
+            raise RuntimeError(
+                "LLM request failed. "
+                f"Initial error: {_format_http_error(original_error)} "
+                f"Retry without response_format also failed: {_format_http_error(retry_error)}"
+            ) from retry_error
+
+    @staticmethod
+    def _post_completion(
+        client: httpx.Client,
+        *,
+        url: str,
+        headers: dict[str, str],
+        body: dict[str, Any],
+    ) -> dict[str, Any]:
+        response = client.post(url, headers=headers, json=body)
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise exc
+        return response.json()
+
     def _parse_completion_payload(self, completion_text: str) -> dict[str, Any]:
         try:
             payload = json.loads(completion_text)
@@ -344,6 +528,7 @@ class LlmHealthAnalyzer:
         summary = str(payload.get("summary", "")).strip()
         concern_level = str(payload.get("concern_level", "")).strip().lower()
         highlights_raw = payload.get("highlights", [])
+        advice = payload.get("advice")
         if not summary:
             raise ValueError("LLM response did not include a summary.")
         if concern_level not in ALLOWED_CONCERN_LEVELS:
@@ -353,10 +538,12 @@ class LlmHealthAnalyzer:
         highlights = [str(item).strip() for item in highlights_raw if str(item).strip()]
         if not highlights:
             raise ValueError("LLM response did not include any highlights.")
+        advice_text = str(advice).strip() if advice is not None else ""
         return {
             "summary": summary,
             "concern_level": concern_level,
             "highlights": highlights[:3],
+            "advice": advice_text or None,
         }
 
     @staticmethod
@@ -402,6 +589,7 @@ def _analysis_to_schema(analysis: Any, *, status: str) -> HealthAnalysisRead:
         summary=analysis.summary,
         concern_level=analysis.concern_level,
         highlights=list(analysis.highlights_json or []),
+        advice=analysis.advice,
         generated_at=analysis.generated_at,
         measurement_count=analysis.measurement_count,
         is_stale=bool(analysis.is_stale),
@@ -419,3 +607,35 @@ def _mask_api_key(api_key: str | None) -> str | None:
 
 def _is_provider_configured(settings: AppSettings) -> bool:
     return bool(settings.llm_base_url.strip() and settings.llm_model.strip())
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisSnapshot:
+    analysis: HealthAnalysisRead
+    should_refresh: bool
+    measurements_desc: list[Measurement]
+    cached: Any
+    measurement_ids: list[int]
+    measurement_count: int
+    latest_measurement_id: int | None
+    app_settings: AppSettings
+
+
+def _response_text(response: httpx.Response) -> str:
+    text = response.text.strip()
+    if not text:
+        return ""
+    return " ".join(text.split())
+
+
+def _format_http_error(exc: httpx.HTTPStatusError) -> str:
+    response = exc.response
+    detail = _response_text(response)
+    prefix = f"HTTP {response.status_code} from {response.request.url}."
+    if detail:
+        return f"{prefix} Response body: {detail}"
+    return prefix
+
+
+def _llm_request_error(exc: httpx.HTTPStatusError) -> RuntimeError:
+    return RuntimeError(f"LLM request failed. {_format_http_error(exc)}")

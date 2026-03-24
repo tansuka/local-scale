@@ -147,6 +147,7 @@ class ProfileHealthAnalysis(Base):
     summary: Mapped[str | None] = mapped_column(Text)
     concern_level: Mapped[str | None] = mapped_column(String(32))
     highlights_json: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    advice: Mapped[str | None] = mapped_column(Text)
     generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_stale: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text)

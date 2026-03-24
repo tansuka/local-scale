@@ -23,6 +23,7 @@ def save_profile_health_analysis(
     summary: str | None,
     concern_level: str | None,
     highlights: list[str],
+    advice: str | None,
     generated_at: datetime | None,
     is_stale: bool,
     error_message: str | None,
@@ -39,6 +40,7 @@ def save_profile_health_analysis(
     analysis.summary = summary
     analysis.concern_level = concern_level
     analysis.highlights_json = highlights
+    analysis.advice = advice
     analysis.generated_at = generated_at
     analysis.is_stale = is_stale
     analysis.error_message = error_message

@@ -77,15 +77,26 @@ export function ProfileHealthSummary({
               ))}
             </ul>
           ) : null}
+          {renderedAnalysis.advice ? (
+            <p className="analysis-advice">
+              <strong>Advice:</strong> {renderedAnalysis.advice}
+            </p>
+          ) : null}
           <p className="analysis-note muted">
             {renderedAnalysis.generated_at
               ? `Updated ${formatDateTime(renderedAnalysis.generated_at)}`
               : "Analysis generated from recent measurements."}
             {renderedAnalysis.is_stale && renderedAnalysis.error_message
               ? ` Showing the last good result because refresh failed: ${renderedAnalysis.error_message}`
-              : ""}
+              : renderedAnalysis.is_stale
+                ? " Refreshing in the background."
+                : ""}
           </p>
         </>
+      ) : renderedAnalysis.status === "pending" ? (
+        <p className="analysis-summary muted">
+          Generating the health analysis now. The rest of the dashboard is ready while the summary catches up.
+        </p>
       ) : renderedAnalysis.status === "no_data" ? (
         <p className="analysis-summary muted">No measurements yet, so there is nothing to analyze.</p>
       ) : renderedAnalysis.status === "error" ? (
