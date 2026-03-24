@@ -15,7 +15,30 @@ def _band(value: float | None, healthy_low: float, healthy_high: float) -> str:
     return "obese"
 
 
-def classify_metrics(*, sex: str, bmi: float | None, fat_pct: float | None, water_pct: float | None, visceral_fat: float | None, muscle_pct: float | None, skeletal_muscle_pct: float | None) -> dict[str, str]:
+def _skeletal_muscle_mass_status(
+    *,
+    sex: str,
+    height_cm: float | None,
+    skeletal_muscle_weight_kg: float | None,
+) -> str:
+    if skeletal_muscle_weight_kg is None or height_cm is None or height_cm <= 0:
+        return "unknown"
+    height_m = height_cm / 100.0
+    smi = skeletal_muscle_weight_kg / (height_m**2)
+    if sex.lower().startswith("m"):
+        low_cutoff = 8.5
+        healthy_high = 10.75
+    else:
+        low_cutoff = 5.75
+        healthy_high = 6.75
+    if smi <= low_cutoff:
+        return "low"
+    if smi <= healthy_high:
+        return "healthy"
+    return "high"
+
+
+def classify_metrics(*, sex: str, height_cm: float | None, bmi: float | None, fat_pct: float | None, water_pct: float | None, visceral_fat: float | None, muscle_pct: float | None, skeletal_muscle_weight_kg: float | None, skeletal_muscle_pct: float | None) -> dict[str, str]:
     if sex.lower().startswith("m"):
         fat_range = (8.0, 20.0)
         water_range = (50.0, 65.0)
@@ -33,5 +56,10 @@ def classify_metrics(*, sex: str, bmi: float | None, fat_pct: float | None, wate
         "water_pct": _band(water_pct, *water_range),
         "visceral_fat": _band(visceral_fat, 1.0, 12.0),
         "muscle_pct": _band(muscle_pct, *muscle_range),
+        "skeletal_muscle_weight_kg": _skeletal_muscle_mass_status(
+            sex=sex,
+            height_cm=height_cm,
+            skeletal_muscle_weight_kg=skeletal_muscle_weight_kg,
+        ),
         "skeletal_muscle_pct": _band(skeletal_muscle_pct, *skeletal_range),
     }

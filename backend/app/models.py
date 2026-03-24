@@ -23,6 +23,7 @@ class Profile(Base):
     sex: Mapped[str] = mapped_column(String(16), nullable=False)
     birth_date: Mapped[date] = mapped_column(Date, nullable=False)
     height_cm: Mapped[float] = mapped_column(Float, nullable=False)
+    waist_cm: Mapped[float | None] = mapped_column(Float)
     units: Mapped[str] = mapped_column(String(8), default="metric", nullable=False)
     color: Mapped[str] = mapped_column(String(16), default="#0f766e", nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

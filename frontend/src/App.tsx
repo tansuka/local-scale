@@ -197,7 +197,9 @@ export function App() {
                   <h2>{selectedProfile?.name ?? "No profile selected"}</h2>
                   <p className="muted">
                     {selectedProfile
-                      ? `${selectedProfile.sex}, ${selectedProfile.height_cm} cm. ${
+                      ? `${selectedProfile.sex}, ${selectedProfile.height_cm} cm${
+                          selectedProfile.waist_cm ? `, waist ${selectedProfile.waist_cm} cm` : ""
+                        }. ${
                           pendingCount > 0
                             ? `${pendingCount} weigh-in${pendingCount > 1 ? "s" : ""} need review.`
                             : "Everything is saved cleanly."

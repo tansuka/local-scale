@@ -4,6 +4,7 @@ export type Profile = {
   sex: string;
   birth_date: string;
   height_cm: number;
+  waist_cm?: number | null;
   units: string;
   color: string;
   notes?: string | null;

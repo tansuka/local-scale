@@ -19,7 +19,7 @@ const METRIC_OPTIONS = [
   { key: "fat_pct", label: "Fat %", unit: "%" },
   { key: "water_pct", label: "Water %", unit: "%" },
   { key: "muscle_pct", label: "Muscle %", unit: "%" },
-  { key: "skeletal_muscle_pct", label: "Skeletal Muscle %", unit: "%" },
+  { key: "skeletal_muscle_weight_kg", label: "Skeletal Muscle", unit: "kg" },
   { key: "visceral_fat", label: "Visceral Fat", unit: "" },
   { key: "bmi", label: "BMI", unit: "" },
   { key: "bmr_kcal", label: "Metabolism", unit: "kcal" },

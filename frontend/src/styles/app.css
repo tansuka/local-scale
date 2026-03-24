@@ -348,6 +348,13 @@ select {
   gap: 0.35rem;
 }
 
+.metric-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
 .metric-card strong {
   font-size: 1.55rem;
 }
@@ -496,6 +503,13 @@ select {
   line-height: 1.55;
 }
 
+.metric-source-note,
+.history-source-note {
+  margin: 0.75rem 0 0;
+  color: #d8c3a9;
+  line-height: 1.5;
+}
+
 .status-tag {
   display: inline-flex;
   width: fit-content;
@@ -526,6 +540,11 @@ select {
   color: #ffc193;
 }
 
+.status-tag.estimated {
+  background: rgba(118, 153, 214, 0.2);
+  color: #cfe1ff;
+}
+
 .chart-surface {
   width: 100%;
   min-height: 380px;
@@ -547,6 +566,13 @@ select {
 .history-table {
   width: 100%;
   border-collapse: collapse;
+}
+
+.metric-value-with-source {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .history-table th,

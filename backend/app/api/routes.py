@@ -106,6 +106,7 @@ def _build_chart_response(profile_id: int, rows: list[Measurement]) -> ChartResp
         "bmi",
         "fat_pct",
         "muscle_pct",
+        "skeletal_muscle_weight_kg",
         "skeletal_muscle_pct",
         "water_pct",
         "visceral_fat",

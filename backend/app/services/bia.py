@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from app.models import Profile
+from app.services.anthropometric import measurement_date_from_raw
 
 CALIBRATION_ENV_VAR = "LOCAL_SCALE_BIA_CALIBRATION_PATH"
 DEFAULT_FEATURES = (
@@ -156,7 +157,7 @@ def estimate_from_raw(profile: Profile, raw: dict[str, Any]) -> tuple[dict[str, 
     if not calibration:
         return {}, {}
 
-    measurement_date = raw.get("measurement_date", date.today())
+    measurement_date = measurement_date_from_raw(raw)
     estimates = estimate_metrics(
         profile=profile,
         weight_kg=float(raw["weight_kg"]),

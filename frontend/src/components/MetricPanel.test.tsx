@@ -16,7 +16,7 @@ const measurement = {
   fat_pct: 23.2,
   fat_weight_kg: null,
   skeletal_muscle_pct: 40.1,
-  skeletal_muscle_weight_kg: null,
+  skeletal_muscle_weight_kg: 31.4,
   muscle_pct: 45.3,
   muscle_weight_kg: null,
   visceral_fat: 8,
@@ -29,11 +29,15 @@ const measurement = {
   status_by_metric: {
     bmi: "high",
     fat_pct: "high",
+    skeletal_muscle_weight_kg: "healthy",
     muscle_pct: "healthy",
     water_pct: "healthy",
     visceral_fat: "healthy",
   },
-  source_metric_map: {},
+  source_metric_map: {
+    fat_pct: "anthropometric_estimated",
+    skeletal_muscle_weight_kg: "anthropometric_estimated",
+  },
   raw_payload_json: {},
 };
 
@@ -43,6 +47,7 @@ const profile = {
   sex: "male",
   birth_date: "1989-08-17",
   height_cm: 181,
+  waist_cm: 84,
   units: "metric",
   color: "#0f766e",
   active: true,
@@ -67,5 +72,29 @@ describe("MetricPanel", () => {
         "BMI is a quick weight-to-height screening number. It is useful for trend tracking, but it should be read alongside fat, muscle, and water.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("shows an estimated indicator and provenance copy for anthropometric values", () => {
+    render(<MetricPanel measurement={measurement} profile={profile} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Fat\b/i }));
+
+    expect(screen.getAllByText("Estimated").length).toBeGreaterThan(0);
+    expect(
+      screen.getByText(
+        "Estimated from sex, age, height, and weight. This value was not read directly from the scale.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows skeletal muscle mass with a health band", () => {
+    render(<MetricPanel measurement={measurement} profile={profile} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Skeletal Muscle/i }));
+
+    expect(screen.getByRole("heading", { name: "Skeletal Muscle" })).toBeInTheDocument();
+    expect(screen.getAllByText("31.4kg").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Healthy").length).toBeGreaterThan(0);
+    expect(screen.getByText("Very High")).toBeInTheDocument();
   });
 });

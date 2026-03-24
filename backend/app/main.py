@@ -11,6 +11,7 @@ from app.api.routes import frontend_file, router
 from app.core.config import Settings, get_settings
 from app.db import Database
 from app.services.adapters import build_scale_adapter
+from app.services.anthropometric import backfill_missing_measurements
 from app.services.events import EventBroker
 from app.services.seed import seed_demo_data
 from app.services.sessions import SessionManager
@@ -32,9 +33,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         database.create_all()
-        if settings.seed_demo_data:
-            with database.make_session() as db:
+        with database.make_session() as db:
+            if settings.seed_demo_data:
                 seed_demo_data(db, str(settings.replay_fixture_path))
+            backfill_missing_measurements(db)
         yield
 
     app = FastAPI(title=settings.app_name, lifespan=lifespan)

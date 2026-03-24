@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 
+import { isAnthropometricEstimate } from "../lib/measurementSources";
 import type { Measurement, Profile } from "../lib/types";
 import { formatDateTime } from "../lib/dates";
 
@@ -12,6 +13,7 @@ type MetricKey =
   | "weight_kg"
   | "bmi"
   | "fat_pct"
+  | "skeletal_muscle_weight_kg"
   | "muscle_pct"
   | "water_pct"
   | "visceral_fat"
@@ -29,6 +31,11 @@ type MetricBand = {
   healthyLow: number;
   healthyHigh: number;
   obeseHigh: number;
+  lowLabel?: string;
+  healthyLabel?: string;
+  highLabel?: string;
+  obeseLabel?: string;
+  saturatesHigh?: boolean;
 };
 
 const METRICS: MetricDefinition[] = [
@@ -52,6 +59,13 @@ const METRICS: MetricDefinition[] = [
     unit: "%",
     description:
       "Body fat percentage reflects stored energy and overall body composition. Watching the trend matters more than any single reading.",
+  },
+  {
+    key: "skeletal_muscle_weight_kg",
+    label: "Skeletal Muscle",
+    unit: "kg",
+    description:
+      "Skeletal muscle mass estimates how much movement-producing muscle tissue you carry. This is best compared over time and against your height, not against body weight alone.",
   },
   {
     key: "muscle_pct",
@@ -115,6 +129,23 @@ function bandForMetric(metric: MetricKey, profile?: Profile | null): MetricBand 
       return isMale
         ? { healthyLow: 8, healthyHigh: 20, obeseHigh: 24 }
         : { healthyLow: 21, healthyHigh: 33, obeseHigh: 39.6 };
+    case "skeletal_muscle_weight_kg": {
+      if (!profile?.height_cm) {
+        return null;
+      }
+      const heightMeters = profile.height_cm / 100;
+      const factor = heightMeters * heightMeters;
+      return {
+        healthyLow: (isMale ? 8.5 : 5.75) * factor,
+        healthyHigh: (isMale ? 10.75 : 6.75) * factor,
+        obeseHigh: (isMale ? 10.75 : 6.75) * factor * 1.15,
+        lowLabel: "Low",
+        healthyLabel: "Healthy",
+        highLabel: "High",
+        obeseLabel: "Very High",
+        saturatesHigh: true,
+      };
+    }
     case "muscle_pct":
       return isMale
         ? { healthyLow: 38, healthyHigh: 50, obeseHigh: 60 }
@@ -139,6 +170,9 @@ function classifyValue(value: number | null, band: MetricBand | null): string | 
   }
   if (value <= band.healthyHigh) {
     return "healthy";
+  }
+  if (band.saturatesHigh) {
+    return "high";
   }
   if (value <= band.obeseHigh) {
     return "high";
@@ -170,6 +204,15 @@ function thresholdLabel(value: number): string {
   return `${roundDisplay(value)}`;
 }
 
+function labelsForBand(band: MetricBand | null) {
+  return {
+    low: band?.lowLabel ?? "Low",
+    healthy: band?.healthyLabel ?? "Healthy",
+    high: band?.highLabel ?? "High",
+    obese: band?.obeseLabel ?? "Obese",
+  };
+}
+
 export function MetricPanel({ measurement, profile }: MetricPanelProps) {
   const availableMetricKeys = useMemo(
     () =>
@@ -191,6 +234,8 @@ export function MetricPanel({ measurement, profile }: MetricPanelProps) {
   const activeBand = bandForMetric(activeMetric.key, profile);
   const activeStatus = classifyValue(activeValue, activeBand);
   const activeMarkerPosition = markerPosition(activeValue, activeBand);
+  const activeIsEstimated = isAnthropometricEstimate(measurement, activeMetric.key);
+  const bandLabels = labelsForBand(activeBand);
 
   return (
     <section className="panel metric-panel">
@@ -208,6 +253,7 @@ export function MetricPanel({ measurement, profile }: MetricPanelProps) {
           const band = bandForMetric(metric.key, profile);
           const status = classifyValue(numericValue, band);
           const isActive = metric.key === activeMetricKey;
+          const isEstimated = isAnthropometricEstimate(measurement, metric.key);
           return (
             <button
               key={metric.key}
@@ -218,11 +264,16 @@ export function MetricPanel({ measurement, profile }: MetricPanelProps) {
             >
               <span>{metric.label}</span>
               <strong>{numericValue !== null ? `${numericValue}${metric.unit}` : "—"}</strong>
-              {status ? (
-                <small className={`status-tag ${status}`}>{status}</small>
-              ) : (
-                <small>{numericValue !== null ? "derived" : "no data"}</small>
-              )}
+              <div className="metric-card-meta">
+                {status ? (
+                  <small className={`status-tag ${status}`}>{status}</small>
+                ) : (
+                  <small>{numericValue !== null ? "derived" : "no data"}</small>
+                )}
+                {isEstimated ? (
+                  <small className="status-tag compact estimated">Estimated</small>
+                ) : null}
+              </div>
             </button>
           );
         })}
@@ -236,6 +287,7 @@ export function MetricPanel({ measurement, profile }: MetricPanelProps) {
           <div className="metric-detail-value">
             <strong>{activeValue !== null ? `${activeValue}${activeMetric.unit}` : "—"}</strong>
             {activeStatus ? <span className={`status-tag ${activeStatus}`}>{activeStatus}</span> : null}
+            {activeIsEstimated ? <span className="status-tag estimated">Estimated</span> : null}
           </div>
         </div>
 
@@ -256,15 +308,21 @@ export function MetricPanel({ measurement, profile }: MetricPanelProps) {
               </div>
             </div>
             <div className="health-labels">
-              <span>Low</span>
-              <span>Healthy</span>
-              <span>High</span>
-              <span>Obese</span>
+              <span>{bandLabels.low}</span>
+              <span>{bandLabels.healthy}</span>
+              <span>{bandLabels.high}</span>
+              <span>{bandLabels.obese}</span>
             </div>
           </div>
         ) : null}
 
         <p className="metric-detail-copy">{activeMetric.description}</p>
+        {activeIsEstimated ? (
+          <p className="metric-source-note">
+            Estimated from sex, age, height, and weight. This value was not read directly from
+            the scale.
+          </p>
+        ) : null}
       </div>
     </section>
   );

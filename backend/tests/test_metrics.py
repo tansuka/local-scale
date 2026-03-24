@@ -33,4 +33,6 @@ def test_normalize_measurement_derives_secondary_metrics():
     assert normalized["bmi"] == 24.8
     assert normalized["fat_weight_kg"] == 15.59
     assert normalized["water_weight_kg"] == 45.15
+    assert normalized["skeletal_muscle_weight_kg"] == 33.7
     assert normalized["status_by_metric"]["bmi"] == "healthy"
+    assert normalized["status_by_metric"]["skeletal_muscle_weight_kg"] == "healthy"

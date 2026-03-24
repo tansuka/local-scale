@@ -18,6 +18,7 @@ class ProfileCreate(BaseModel):
     sex: str
     birth_date: date
     height_cm: float = Field(gt=0)
+    waist_cm: float | None = Field(default=None, gt=0)
     units: str = "metric"
     color: str = "#0f766e"
     notes: str | None = None

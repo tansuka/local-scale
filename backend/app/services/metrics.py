@@ -3,6 +3,11 @@ from __future__ import annotations
 from datetime import date
 
 from app.models import Measurement, Profile
+from app.services.anthropometric import (
+    ANTHROPOMETRIC_SOURCE,
+    estimate_metrics as estimate_anthropometric_metrics,
+    measurement_date_from_raw,
+)
 from app.services.bia import estimate_from_raw
 from app.services.classification import classify_metrics
 
@@ -22,16 +27,34 @@ def _healthy_midpoint(sex: str) -> tuple[float, float]:
 
 def normalize_measurement(profile: Profile, raw: dict) -> dict:
     estimated_bia_metrics, estimated_source_metric_map = estimate_from_raw(profile, raw)
+    measurement_date = measurement_date_from_raw(raw)
+    source_metric_map = {
+        **estimated_source_metric_map,
+        **dict(raw.get("source_metric_map", {}) or {}),
+    }
     effective_raw = {
         **estimated_bia_metrics,
         **raw,
-        "source_metric_map": {
-            **estimated_source_metric_map,
-            **dict(raw.get("source_metric_map", {}) or {}),
-        },
+        "measurement_date": measurement_date,
+        "source_metric_map": source_metric_map,
     }
 
     weight_kg = float(effective_raw["weight_kg"])
+    if (
+        effective_raw.get("fat_pct") is None
+        or effective_raw.get("water_pct") is None
+        or effective_raw.get("skeletal_muscle_weight_kg") is None
+    ):
+        anthropometric_estimates = estimate_anthropometric_metrics(
+            profile=profile,
+            weight_kg=weight_kg,
+            measurement_date=measurement_date,
+        )
+        for metric, value in anthropometric_estimates.items():
+            if effective_raw.get(metric) is None:
+                effective_raw[metric] = value
+                source_metric_map[metric] = ANTHROPOMETRIC_SOURCE
+
     height_m = profile.height_cm / 100.0
     bmi = effective_raw.get("bmi") or round(weight_kg / (height_m**2), 1)
 
@@ -52,6 +75,8 @@ def normalize_measurement(profile: Profile, raw: dict) -> dict:
 
     skeletal_muscle_pct = effective_raw.get("skeletal_muscle_pct")
     skeletal_muscle_weight_kg = effective_raw.get("skeletal_muscle_weight_kg")
+    if skeletal_muscle_pct is None and skeletal_muscle_weight_kg is not None:
+        skeletal_muscle_pct = round(skeletal_muscle_weight_kg / weight_kg * 100.0, 2)
     if skeletal_muscle_pct is not None and skeletal_muscle_weight_kg is None:
         skeletal_muscle_weight_kg = round(weight_kg * skeletal_muscle_pct / 100.0, 2)
 
@@ -59,7 +84,7 @@ def normalize_measurement(profile: Profile, raw: dict) -> dict:
     if bone_weight_kg is None:
         bone_weight_kg = round(weight_kg * 0.04, 2)
 
-    today = effective_raw.get("measurement_date", date.today())
+    today = measurement_date
     age = age_on(profile.birth_date, today)
     bmr_kcal = effective_raw.get("bmr_kcal")
     if bmr_kcal is None:
@@ -84,30 +109,32 @@ def normalize_measurement(profile: Profile, raw: dict) -> dict:
 
     status_by_metric = classify_metrics(
         sex=profile.sex,
+        height_cm=profile.height_cm,
         bmi=bmi,
         fat_pct=fat_pct,
         water_pct=water_pct,
         visceral_fat=effective_raw.get("visceral_fat"),
         muscle_pct=muscle_pct,
+        skeletal_muscle_weight_kg=skeletal_muscle_weight_kg,
         skeletal_muscle_pct=skeletal_muscle_pct,
     )
 
     source_metric_map = {
-        "weight_kg": effective_raw.get("source_metric_map", {}).get("weight_kg", effective_raw.get("source", "replay")),
-        "bmi": effective_raw.get("source_metric_map", {}).get("bmi", "computed"),
-        "fat_pct": effective_raw.get("source_metric_map", {}).get("fat_pct", effective_raw.get("source", "replay")),
-        "fat_weight_kg": effective_raw.get("source_metric_map", {}).get("fat_weight_kg", "computed"),
-        "skeletal_muscle_pct": effective_raw.get("source_metric_map", {}).get("skeletal_muscle_pct", effective_raw.get("source", "replay")),
-        "skeletal_muscle_weight_kg": effective_raw.get("source_metric_map", {}).get("skeletal_muscle_weight_kg", "computed"),
-        "muscle_pct": effective_raw.get("source_metric_map", {}).get("muscle_pct", effective_raw.get("source", "replay")),
-        "muscle_weight_kg": effective_raw.get("source_metric_map", {}).get("muscle_weight_kg", "computed"),
-        "visceral_fat": effective_raw.get("source_metric_map", {}).get("visceral_fat", effective_raw.get("source", "replay")),
-        "water_pct": effective_raw.get("source_metric_map", {}).get("water_pct", effective_raw.get("source", "replay")),
-        "water_weight_kg": effective_raw.get("source_metric_map", {}).get("water_weight_kg", "computed"),
-        "bone_weight_kg": effective_raw.get("source_metric_map", {}).get("bone_weight_kg", "estimated"),
-        "bmr_kcal": effective_raw.get("source_metric_map", {}).get("bmr_kcal", "estimated"),
-        "metabolic_age": effective_raw.get("source_metric_map", {}).get("metabolic_age", "estimated"),
-        "body_age": effective_raw.get("source_metric_map", {}).get("body_age", "estimated"),
+        "weight_kg": source_metric_map.get("weight_kg", effective_raw.get("source", "replay")),
+        "bmi": source_metric_map.get("bmi", "computed"),
+        "fat_pct": source_metric_map.get("fat_pct", effective_raw.get("source", "replay")),
+        "fat_weight_kg": source_metric_map.get("fat_weight_kg", "computed"),
+        "skeletal_muscle_pct": source_metric_map.get("skeletal_muscle_pct", effective_raw.get("source", "replay")),
+        "skeletal_muscle_weight_kg": source_metric_map.get("skeletal_muscle_weight_kg", "computed"),
+        "muscle_pct": source_metric_map.get("muscle_pct", effective_raw.get("source", "replay")),
+        "muscle_weight_kg": source_metric_map.get("muscle_weight_kg", "computed"),
+        "visceral_fat": source_metric_map.get("visceral_fat", effective_raw.get("source", "replay")),
+        "water_pct": source_metric_map.get("water_pct", effective_raw.get("source", "replay")),
+        "water_weight_kg": source_metric_map.get("water_weight_kg", "computed"),
+        "bone_weight_kg": source_metric_map.get("bone_weight_kg", "estimated"),
+        "bmr_kcal": source_metric_map.get("bmr_kcal", "estimated"),
+        "metabolic_age": source_metric_map.get("metabolic_age", "estimated"),
+        "body_age": source_metric_map.get("body_age", "estimated"),
     }
 
     return {
