@@ -7,6 +7,7 @@ from app.services.anthropometric import (
     estimate_fat_pct,
     estimate_skeletal_muscle_mass_kg,
     estimate_total_body_water_kg,
+    estimate_visceral_adiposity_index,
     estimate_water_pct,
     measurement_date_from_raw,
 )
@@ -113,6 +114,30 @@ def test_estimate_skeletal_muscle_mass_uses_lee_equation_without_race_adjustment
     )
 
     assert skeletal_muscle_mass == 31.91
+
+
+def test_estimate_visceral_adiposity_index_uses_waist_and_labs():
+    profile = Profile(
+        id=1,
+        name="Alex",
+        sex="male",
+        birth_date=date(1990, 1, 1),
+        height_cm=180,
+        units="metric",
+        color="#0f766e",
+        active=True,
+    )
+
+    visceral_adiposity_index = estimate_visceral_adiposity_index(
+        profile=profile,
+        weight_kg=74.19,
+        waist_cm=84.0,
+        triglycerides_mmol_l=1.1,
+        hdl_mmol_l=1.4,
+        measurement_date=date(2026, 3, 17),
+    )
+
+    assert visceral_adiposity_index == 1.01
 
 
 def test_measurement_date_from_raw_prefers_measured_at_when_missing_explicit_date():

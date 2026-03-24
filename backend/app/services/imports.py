@@ -9,7 +9,7 @@ from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
 from app.models import ImportBatch
-from app.repositories.measurements import add_measurement, is_duplicate
+from app.repositories.measurements import add_measurement, is_duplicate, latest_known_measurement_value
 from app.repositories.profiles import get_profile, get_profile_by_name
 from app.schemas import ImportPreviewResponse, ImportPreviewRow
 from app.services.metrics import normalize_measurement
@@ -18,6 +18,9 @@ FIELD_ALIASES = {
     "measured_at": {"measured_at", "timestamp", "date", "datetime", "recorded_at"},
     "profile_name": {"profile", "profile_name", "user", "name"},
     "weight_kg": {"weight", "weight_kg", "kg"},
+    "waist_cm": {"waist", "waist_cm", "waist_circumference"},
+    "triglycerides_mmol_l": {"triglycerides_mmol_l", "triglycerides", "tg_mmol_l", "tg"},
+    "hdl_mmol_l": {"hdl_mmol_l", "hdl", "hdl_cholesterol"},
     "bmi": {"bmi"},
     "fat_pct": {"fat_pct", "fat", "body_fat", "body_fat_pct"},
     "water_pct": {"water_pct", "water"},
@@ -88,6 +91,7 @@ async def preview_csv_upload(upload: UploadFile) -> ImportPreviewResponse:
                 measured_at=measured_at,
                 profile_name=row.get(mapping.get("profile_name", "")) or None,
                 weight_kg=weight_kg,
+                waist_cm=_parse_float(row.get(mapping.get("waist_cm", ""))),
                 bmi=_parse_float(row.get(mapping.get("bmi", ""))),
                 fat_pct=_parse_float(row.get(mapping.get("fat_pct", ""))),
                 water_pct=_parse_float(row.get(mapping.get("water_pct", ""))),
@@ -162,12 +166,27 @@ async def commit_csv_upload(
             errors.append({"row": index, "error": "Duplicate measurement"})
             continue
 
+        imported_waist = _parse_float(row.get(mapping.get("waist_cm", "")))
+        waist_source = "import"
+        if imported_waist is None:
+            imported_waist = latest_known_measurement_value(
+                db,
+                profile_id=target_profile.id,
+                field_name="waist_cm",
+                measured_at=measured_at,
+            )
+            if imported_waist is not None:
+                waist_source = "carried_forward"
+
         payload = normalize_measurement(
             target_profile,
             {
                 "measured_at": measured_at,
                 "source": "import",
                 "weight_kg": weight_kg,
+                "waist_cm": imported_waist,
+                "triglycerides_mmol_l": _parse_float(row.get(mapping.get("triglycerides_mmol_l", ""))),
+                "hdl_mmol_l": _parse_float(row.get(mapping.get("hdl_mmol_l", ""))),
                 "bmi": _parse_float(row.get(mapping.get("bmi", ""))),
                 "fat_pct": _parse_float(row.get(mapping.get("fat_pct", ""))),
                 "water_pct": _parse_float(row.get(mapping.get("water_pct", ""))),
@@ -179,6 +198,9 @@ async def commit_csv_upload(
                 "raw_payload_json": {"row": index, "source_name": batch.source_name},
                 "source_metric_map": {
                     "weight_kg": "import",
+                    "waist_cm": waist_source,
+                    "triglycerides_mmol_l": "import",
+                    "hdl_mmol_l": "import",
                     "fat_pct": "import",
                     "water_pct": "import",
                     "muscle_pct": "import",

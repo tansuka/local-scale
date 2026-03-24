@@ -19,7 +19,7 @@ const measurement = {
   skeletal_muscle_weight_kg: 31.4,
   muscle_pct: 45.3,
   muscle_weight_kg: null,
-  visceral_fat: 8,
+  visceral_adiposity_index: 1.8,
   water_pct: 56.2,
   water_weight_kg: null,
   bone_weight_kg: null,
@@ -32,11 +32,12 @@ const measurement = {
     skeletal_muscle_weight_kg: "healthy",
     muscle_pct: "healthy",
     water_pct: "healthy",
-    visceral_fat: "healthy",
+    visceral_adiposity_index: "healthy",
   },
   source_metric_map: {
     fat_pct: "anthropometric_estimated",
     skeletal_muscle_weight_kg: "anthropometric_estimated",
+    visceral_adiposity_index: "vai_estimated",
   },
   raw_payload_json: {},
 };
@@ -47,7 +48,6 @@ const profile = {
   sex: "male",
   birth_date: "1989-08-17",
   height_cm: 181,
-  waist_cm: 84,
   units: "metric",
   color: "#0f766e",
   active: true,
@@ -96,5 +96,18 @@ describe("MetricPanel", () => {
     expect(screen.getAllByText("31.4kg").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Healthy").length).toBeGreaterThan(0);
     expect(screen.getByText("Very High")).toBeInTheDocument();
+  });
+
+  it("shows visceral index provenance when it is lab-estimated", () => {
+    render(<MetricPanel measurement={measurement} profile={profile} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Visceral Index/i }));
+
+    expect(screen.getByRole("heading", { name: "Visceral Index" })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Estimated from waist, BMI, triglycerides, and HDL. This value was not read directly from the scale.",
+      ),
+    ).toBeInTheDocument();
   });
 });

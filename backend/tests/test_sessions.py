@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
+
+from app.models import Measurement
 
 from app.services.sessions import SessionManager
 
@@ -134,3 +136,37 @@ def test_start_session_uses_adapter_expected_capture_window(client):
         assert (expires_at - started_at).total_seconds() == 3.0
     finally:
         session_manager._adapter.expected_capture_seconds = original_expected_capture_seconds
+
+
+def test_start_session_inherits_last_known_waist(client):
+    dashboard = client.get("/api/dashboard")
+    selected_profile_id = dashboard.json()["selected_profile_id"]
+
+    with client.app.state.db.make_session() as db:
+        db.add(
+            Measurement(
+                profile_id=selected_profile_id,
+                measured_at=datetime(2026, 3, 1, 7, 0, tzinfo=timezone.utc),
+                source="import",
+                assignment_state="confirmed",
+                confidence=1.0,
+                anomaly_score=0.0,
+                note="Known waist",
+                weight_kg=72.0,
+                waist_cm=84.0,
+                status_by_metric={},
+                source_metric_map={"weight_kg": "import"},
+                raw_payload_json={},
+            )
+        )
+        db.commit()
+
+    start = client.post("/api/sessions/start", json={"selected_profile_id": selected_profile_id})
+    assert start.status_code == 202
+
+    time.sleep(0.08)
+
+    measurements = client.get(f"/api/measurements?profile_id={selected_profile_id}")
+    assert measurements.status_code == 200
+    latest = measurements.json()[0]
+    assert latest["waist_cm"] == 84.0

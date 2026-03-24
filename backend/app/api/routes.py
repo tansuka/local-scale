@@ -13,6 +13,7 @@ from app.repositories.measurements import (
     delete_measurement,
     list_measurements,
     reassign_measurement,
+    update_measurement,
 )
 from app.repositories.profiles import create_profile, get_profile, list_profiles, update_profile
 from app.schemas import (
@@ -23,6 +24,7 @@ from app.schemas import (
     ImportPreviewResponse,
     MeasurementRead,
     MeasurementReassignRequest,
+    MeasurementUpdateRequest,
     ProfileCreate,
     ProfileRead,
     StartSessionRequest,
@@ -30,10 +32,38 @@ from app.schemas import (
 )
 from app.services.events import EventBroker
 from app.services.imports import commit_csv_upload, preview_csv_upload
-from app.services.metrics import measurement_to_chart_value
+from app.services.metrics import measurement_to_chart_value, normalize_measurement
 from app.services.sessions import SessionManager
 
 router = APIRouter()
+
+
+def _measurement_normalize_payload(measurement: Measurement, *, source_metric_map: dict[str, str]) -> dict:
+    return {
+        "measured_at": measurement.measured_at,
+        "source": measurement.source,
+        "weight_kg": measurement.weight_kg,
+        "waist_cm": measurement.waist_cm,
+        "triglycerides_mmol_l": measurement.triglycerides_mmol_l,
+        "hdl_mmol_l": measurement.hdl_mmol_l,
+        "bmi": measurement.bmi,
+        "fat_pct": measurement.fat_pct,
+        "fat_weight_kg": measurement.fat_weight_kg,
+        "skeletal_muscle_pct": measurement.skeletal_muscle_pct,
+        "skeletal_muscle_weight_kg": measurement.skeletal_muscle_weight_kg,
+        "muscle_pct": measurement.muscle_pct,
+        "muscle_weight_kg": measurement.muscle_weight_kg,
+        "visceral_fat": measurement.visceral_fat,
+        "visceral_adiposity_index": measurement.visceral_adiposity_index,
+        "water_pct": measurement.water_pct,
+        "water_weight_kg": measurement.water_weight_kg,
+        "bone_weight_kg": measurement.bone_weight_kg,
+        "bmr_kcal": measurement.bmr_kcal,
+        "metabolic_age": measurement.metabolic_age,
+        "body_age": measurement.body_age,
+        "source_metric_map": source_metric_map,
+        "raw_payload_json": dict(measurement.raw_payload_json or {}),
+    }
 
 
 @router.get("/health")
@@ -90,6 +120,51 @@ def post_reassign_measurement(
     return MeasurementRead.model_validate(measurement)
 
 
+@router.patch("/measurements/{measurement_id}", response_model=MeasurementRead)
+def patch_measurement(
+    measurement_id: int,
+    payload: MeasurementUpdateRequest,
+    db: Session = Depends(get_db),
+) -> MeasurementRead:
+    measurement = db.get(Measurement, measurement_id)
+    if measurement is None:
+        raise HTTPException(status_code=404, detail="Measurement not found")
+
+    update_payload = {
+        key: getattr(payload, key)
+        for key in ("waist_cm", "triglycerides_mmol_l", "hdl_mmol_l")
+        if key in payload.model_fields_set
+    }
+    if not update_payload:
+        return MeasurementRead.model_validate(measurement)
+
+    profile = get_profile(db, measurement.profile_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    source_metric_map = dict(measurement.source_metric_map or {})
+    for key, value in update_payload.items():
+        if value is None:
+            source_metric_map.pop(key, None)
+        else:
+            source_metric_map[key] = "manual_edit"
+    source_metric_map.pop("visceral_adiposity_index", None)
+
+    normalized = normalize_measurement(
+        profile,
+        {
+            **_measurement_normalize_payload(
+                measurement,
+                source_metric_map=source_metric_map,
+            ),
+            **update_payload,
+            "visceral_adiposity_index": None,
+        },
+    )
+    measurement = update_measurement(db, measurement_id, normalized)
+    return MeasurementRead.model_validate(measurement)
+
+
 @router.delete("/measurements/{measurement_id}", status_code=204, response_model=None)
 def delete_measurement_route(
     measurement_id: int,
@@ -103,12 +178,13 @@ def delete_measurement_route(
 def _build_chart_response(profile_id: int, rows: list[Measurement]) -> ChartResponse:
     metrics = [
         "weight_kg",
+        "waist_cm",
         "bmi",
         "fat_pct",
-        "muscle_pct",
         "skeletal_muscle_weight_kg",
         "skeletal_muscle_pct",
         "water_pct",
+        "visceral_adiposity_index",
         "visceral_fat",
         "bmr_kcal",
     ]

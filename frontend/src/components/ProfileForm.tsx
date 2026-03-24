@@ -7,7 +7,6 @@ type ProfileDraft = {
   sex: string;
   birth_date: string;
   height_cm: string;
-  waist_cm: string;
   units: string;
   color: string;
   notes: string;
@@ -28,7 +27,6 @@ const DEFAULT_DRAFT: ProfileDraft = {
   sex: "female",
   birth_date: "",
   height_cm: "",
-  waist_cm: "",
   units: "metric",
   color: "#0f766e",
   notes: "",
@@ -43,7 +41,6 @@ function draftFromProfile(profile: Profile | null | undefined): ProfileDraft {
     sex: profile.sex,
     birth_date: profile.birth_date,
     height_cm: String(profile.height_cm),
-    waist_cm: profile.waist_cm ? String(profile.waist_cm) : "",
     units: profile.units,
     color: profile.color,
     notes: profile.notes ?? "",
@@ -73,7 +70,6 @@ export function ProfileForm({
       sex: draft.sex,
       birth_date: draft.birth_date,
       height_cm: Number(draft.height_cm),
-      waist_cm: draft.waist_cm ? Number(draft.waist_cm) : null,
       units: draft.units,
       color: draft.color,
       notes: draft.notes.trim() || null,
@@ -138,17 +134,6 @@ export function ProfileForm({
             value={draft.height_cm}
             onChange={(event) =>
               setDraft((current) => ({ ...current, height_cm: event.target.value }))
-            }
-          />
-        </label>
-        <label>
-          <span>Waist (cm)</span>
-          <input
-            type="number"
-            min="1"
-            value={draft.waist_cm}
-            onChange={(event) =>
-              setDraft((current) => ({ ...current, waist_cm: event.target.value }))
             }
           />
         </label>

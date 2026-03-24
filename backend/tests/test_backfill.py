@@ -146,6 +146,7 @@ def test_create_all_adds_waist_column_to_existing_profiles_table(tmp_path):
             sex VARCHAR(16) NOT NULL,
             birth_date DATE NOT NULL,
             height_cm FLOAT NOT NULL,
+            waist_cm FLOAT,
             units VARCHAR(8) NOT NULL,
             color VARCHAR(16) NOT NULL,
             active BOOLEAN NOT NULL,
@@ -155,6 +156,44 @@ def test_create_all_adds_waist_column_to_existing_profiles_table(tmp_path):
         )
         """
     )
+    connection.execute(
+        """
+        CREATE TABLE measurements (
+            id INTEGER PRIMARY KEY,
+            profile_id INTEGER NOT NULL,
+            measured_at DATETIME NOT NULL,
+            source VARCHAR(32) NOT NULL,
+            assignment_state VARCHAR(32) NOT NULL,
+            confidence FLOAT NOT NULL,
+            anomaly_score FLOAT NOT NULL,
+            note TEXT,
+            weight_kg FLOAT NOT NULL,
+            bmi FLOAT,
+            fat_pct FLOAT,
+            fat_weight_kg FLOAT,
+            skeletal_muscle_pct FLOAT,
+            skeletal_muscle_weight_kg FLOAT,
+            muscle_pct FLOAT,
+            muscle_weight_kg FLOAT,
+            visceral_fat FLOAT,
+            water_pct FLOAT,
+            water_weight_kg FLOAT,
+            bone_weight_kg FLOAT,
+            bmr_kcal FLOAT,
+            metabolic_age INTEGER,
+            body_age INTEGER,
+            status_by_metric JSON,
+            source_metric_map JSON,
+            raw_payload_json JSON
+        )
+        """
+    )
+    connection.execute(
+        "INSERT INTO profiles (id, name, sex, birth_date, height_cm, waist_cm, units, color, active) VALUES (1, 'Alex', 'male', '1990-01-01', 180, 84, 'metric', '#0f766e', 1)"
+    )
+    connection.execute(
+        "INSERT INTO measurements (id, profile_id, measured_at, source, assignment_state, confidence, anomaly_score, weight_kg, source_metric_map, raw_payload_json) VALUES (1, 1, '2026-03-17T07:10:00+00:00', 'import', 'confirmed', 1.0, 0.0, 74.19, '{}', '{}')"
+    )
     connection.commit()
     connection.close()
 
@@ -162,10 +201,12 @@ def test_create_all_adds_waist_column_to_existing_profiles_table(tmp_path):
     database.create_all()
 
     check_connection = sqlite3.connect(db_path)
-    columns = {
-        row[1]
-        for row in check_connection.execute("PRAGMA table_info(profiles)").fetchall()
-    }
+    columns = {row[1] for row in check_connection.execute("PRAGMA table_info(measurements)").fetchall()}
+    waist_value = check_connection.execute("SELECT waist_cm FROM measurements WHERE id = 1").fetchone()[0]
     check_connection.close()
 
     assert "waist_cm" in columns
+    assert "triglycerides_mmol_l" in columns
+    assert "hdl_mmol_l" in columns
+    assert "visceral_adiposity_index" in columns
+    assert waist_value == 84

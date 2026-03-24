@@ -38,7 +38,32 @@ def _skeletal_muscle_mass_status(
     return "high"
 
 
-def classify_metrics(*, sex: str, height_cm: float | None, bmi: float | None, fat_pct: float | None, water_pct: float | None, visceral_fat: float | None, muscle_pct: float | None, skeletal_muscle_weight_kg: float | None, skeletal_muscle_pct: float | None) -> dict[str, str]:
+def _visceral_adiposity_index_status(*, age_years: int, visceral_adiposity_index: float | None) -> str:
+    if visceral_adiposity_index is None:
+        return "unknown"
+    if age_years < 30:
+        healthy_high = 2.52
+        severe_cutoff = 2.73
+    elif age_years < 42:
+        healthy_high = 2.23
+        severe_cutoff = 3.12
+    elif age_years < 52:
+        healthy_high = 1.92
+        severe_cutoff = 2.77
+    elif age_years < 66:
+        healthy_high = 1.93
+        severe_cutoff = 3.25
+    else:
+        healthy_high = 2.00
+        severe_cutoff = 3.17
+    if visceral_adiposity_index <= healthy_high:
+        return "healthy"
+    if visceral_adiposity_index <= severe_cutoff:
+        return "high"
+    return "obese"
+
+
+def classify_metrics(*, sex: str, age_years: int, height_cm: float | None, bmi: float | None, fat_pct: float | None, water_pct: float | None, visceral_fat: float | None, visceral_adiposity_index: float | None, muscle_pct: float | None, skeletal_muscle_weight_kg: float | None, skeletal_muscle_pct: float | None) -> dict[str, str]:
     if sex.lower().startswith("m"):
         fat_range = (8.0, 20.0)
         water_range = (50.0, 65.0)
@@ -55,6 +80,10 @@ def classify_metrics(*, sex: str, height_cm: float | None, bmi: float | None, fa
         "fat_pct": _band(fat_pct, *fat_range),
         "water_pct": _band(water_pct, *water_range),
         "visceral_fat": _band(visceral_fat, 1.0, 12.0),
+        "visceral_adiposity_index": _visceral_adiposity_index_status(
+            age_years=age_years,
+            visceral_adiposity_index=visceral_adiposity_index,
+        ),
         "muscle_pct": _band(muscle_pct, *muscle_range),
         "skeletal_muscle_weight_kg": _skeletal_muscle_mass_status(
             sex=sex,

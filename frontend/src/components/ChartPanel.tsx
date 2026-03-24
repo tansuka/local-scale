@@ -10,11 +10,12 @@ type ChartPanelProps = {
 
 const METRIC_OPTIONS = [
   { key: "weight_kg", label: "Weight" },
+  { key: "waist_cm", label: "Waist" },
   { key: "bmi", label: "BMI" },
   { key: "fat_pct", label: "Fat %" },
-  { key: "muscle_pct", label: "Muscle %" },
+  { key: "skeletal_muscle_weight_kg", label: "Skeletal Muscle" },
   { key: "water_pct", label: "Water %" },
-  { key: "visceral_fat", label: "Visceral Fat" },
+  { key: "visceral_adiposity_index", label: "Visceral Index" },
   { key: "bmr_kcal", label: "Metabolism" },
 ];
 

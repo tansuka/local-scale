@@ -26,6 +26,37 @@ def test_import_preview_and_commit(client):
     assert payload["skipped"] == 0
 
 
+def test_patch_measurement_waist(client):
+    dashboard = client.get("/api/dashboard")
+    measurement = dashboard.json()["measurements"][0]
+
+    response = client.patch(
+        f"/api/measurements/{measurement['id']}",
+        json={"waist_cm": 86},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["waist_cm"] == 86
+
+
+def test_patch_measurement_recomputes_visceral_index(client):
+    dashboard = client.get("/api/dashboard")
+    measurement = dashboard.json()["measurements"][0]
+
+    response = client.patch(
+        f"/api/measurements/{measurement['id']}",
+        json={
+            "waist_cm": 84,
+            "triglycerides_mmol_l": 1.1,
+            "hdl_mmol_l": 1.4,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["visceral_adiposity_index"] is not None
+    assert response.json()["source_metric_map"]["visceral_adiposity_index"] == "vai_estimated"
+
+
 def test_update_profile(client):
     dashboard = client.get("/api/dashboard")
     profile = dashboard.json()["profiles"][0]

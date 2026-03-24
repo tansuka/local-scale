@@ -4,7 +4,6 @@ export type Profile = {
   sex: string;
   birth_date: string;
   height_cm: number;
-  waist_cm?: number | null;
   units: string;
   color: string;
   notes?: string | null;
@@ -21,6 +20,9 @@ export type Measurement = {
   anomaly_score: number;
   note?: string | null;
   weight_kg: number;
+  waist_cm?: number | null;
+  triglycerides_mmol_l?: number | null;
+  hdl_mmol_l?: number | null;
   bmi?: number | null;
   fat_pct?: number | null;
   fat_weight_kg?: number | null;
@@ -29,6 +31,7 @@ export type Measurement = {
   muscle_pct?: number | null;
   muscle_weight_kg?: number | null;
   visceral_fat?: number | null;
+  visceral_adiposity_index?: number | null;
   water_pct?: number | null;
   water_weight_kg?: number | null;
   bone_weight_kg?: number | null;
@@ -76,6 +79,7 @@ export type ImportPreviewRow = {
   measured_at?: string | null;
   profile_name?: string | null;
   weight_kg?: number | null;
+  waist_cm?: number | null;
   bmi?: number | null;
   fat_pct?: number | null;
   water_pct?: number | null;

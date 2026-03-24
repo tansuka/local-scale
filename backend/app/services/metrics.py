@@ -5,6 +5,7 @@ from datetime import date
 from app.models import Measurement, Profile
 from app.services.anthropometric import (
     ANTHROPOMETRIC_SOURCE,
+    VAI_SOURCE,
     estimate_metrics as estimate_anthropometric_metrics,
     measurement_date_from_raw,
 )
@@ -44,16 +45,22 @@ def normalize_measurement(profile: Profile, raw: dict) -> dict:
         effective_raw.get("fat_pct") is None
         or effective_raw.get("water_pct") is None
         or effective_raw.get("skeletal_muscle_weight_kg") is None
+        or effective_raw.get("visceral_adiposity_index") is None
     ):
         anthropometric_estimates = estimate_anthropometric_metrics(
             profile=profile,
             weight_kg=weight_kg,
+            waist_cm=effective_raw.get("waist_cm"),
+            triglycerides_mmol_l=effective_raw.get("triglycerides_mmol_l"),
+            hdl_mmol_l=effective_raw.get("hdl_mmol_l"),
             measurement_date=measurement_date,
         )
         for metric, value in anthropometric_estimates.items():
             if effective_raw.get(metric) is None:
                 effective_raw[metric] = value
-                source_metric_map[metric] = ANTHROPOMETRIC_SOURCE
+                source_metric_map[metric] = (
+                    VAI_SOURCE if metric == "visceral_adiposity_index" else ANTHROPOMETRIC_SOURCE
+                )
 
     height_m = profile.height_cm / 100.0
     bmi = effective_raw.get("bmi") or round(weight_kg / (height_m**2), 1)
@@ -109,11 +116,13 @@ def normalize_measurement(profile: Profile, raw: dict) -> dict:
 
     status_by_metric = classify_metrics(
         sex=profile.sex,
+        age_years=age,
         height_cm=profile.height_cm,
         bmi=bmi,
         fat_pct=fat_pct,
         water_pct=water_pct,
         visceral_fat=effective_raw.get("visceral_fat"),
+        visceral_adiposity_index=effective_raw.get("visceral_adiposity_index"),
         muscle_pct=muscle_pct,
         skeletal_muscle_weight_kg=skeletal_muscle_weight_kg,
         skeletal_muscle_pct=skeletal_muscle_pct,
@@ -121,14 +130,26 @@ def normalize_measurement(profile: Profile, raw: dict) -> dict:
 
     source_metric_map = {
         "weight_kg": source_metric_map.get("weight_kg", effective_raw.get("source", "replay")),
+        "waist_cm": source_metric_map.get("waist_cm", effective_raw.get("source", "replay")),
+        "triglycerides_mmol_l": source_metric_map.get(
+            "triglycerides_mmol_l", effective_raw.get("source", "replay")
+        ),
+        "hdl_mmol_l": source_metric_map.get(
+            "hdl_mmol_l", effective_raw.get("source", "replay")
+        ),
         "bmi": source_metric_map.get("bmi", "computed"),
         "fat_pct": source_metric_map.get("fat_pct", effective_raw.get("source", "replay")),
         "fat_weight_kg": source_metric_map.get("fat_weight_kg", "computed"),
-        "skeletal_muscle_pct": source_metric_map.get("skeletal_muscle_pct", effective_raw.get("source", "replay")),
+        "skeletal_muscle_pct": source_metric_map.get(
+            "skeletal_muscle_pct", effective_raw.get("source", "replay")
+        ),
         "skeletal_muscle_weight_kg": source_metric_map.get("skeletal_muscle_weight_kg", "computed"),
         "muscle_pct": source_metric_map.get("muscle_pct", effective_raw.get("source", "replay")),
         "muscle_weight_kg": source_metric_map.get("muscle_weight_kg", "computed"),
         "visceral_fat": source_metric_map.get("visceral_fat", effective_raw.get("source", "replay")),
+        "visceral_adiposity_index": source_metric_map.get(
+            "visceral_adiposity_index", effective_raw.get("source", "replay")
+        ),
         "water_pct": source_metric_map.get("water_pct", effective_raw.get("source", "replay")),
         "water_weight_kg": source_metric_map.get("water_weight_kg", "computed"),
         "bone_weight_kg": source_metric_map.get("bone_weight_kg", "estimated"),
@@ -141,6 +162,9 @@ def normalize_measurement(profile: Profile, raw: dict) -> dict:
         "measured_at": effective_raw["measured_at"],
         "source": effective_raw.get("source", "replay"),
         "weight_kg": weight_kg,
+        "waist_cm": effective_raw.get("waist_cm"),
+        "triglycerides_mmol_l": effective_raw.get("triglycerides_mmol_l"),
+        "hdl_mmol_l": effective_raw.get("hdl_mmol_l"),
         "bmi": bmi,
         "fat_pct": fat_pct,
         "fat_weight_kg": fat_weight_kg,
@@ -149,6 +173,7 @@ def normalize_measurement(profile: Profile, raw: dict) -> dict:
         "muscle_pct": muscle_pct,
         "muscle_weight_kg": muscle_weight_kg,
         "visceral_fat": effective_raw.get("visceral_fat"),
+        "visceral_adiposity_index": effective_raw.get("visceral_adiposity_index"),
         "water_pct": water_pct,
         "water_weight_kg": water_weight_kg,
         "bone_weight_kg": bone_weight_kg,

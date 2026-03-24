@@ -71,6 +71,36 @@ def test_normalize_measurement_preserves_explicit_values_over_anthropometric_fal
     assert normalized["source_metric_map"]["skeletal_muscle_weight_kg"] == "anthropometric_estimated"
 
 
+def test_normalize_measurement_can_add_visceral_index_when_other_metrics_already_exist():
+    normalized = normalize_measurement(
+        _profile(),
+        {
+            "measured_at": datetime(2026, 3, 17, 7, 10, tzinfo=timezone.utc),
+            "source": "import",
+            "weight_kg": 74.19,
+            "waist_cm": 84.0,
+            "triglycerides_mmol_l": 1.1,
+            "hdl_mmol_l": 1.4,
+            "fat_pct": 18.3,
+            "water_pct": 56.4,
+            "skeletal_muscle_weight_kg": 31.5,
+            "source_metric_map": {
+                "weight_kg": "import",
+                "waist_cm": "manual_edit",
+                "triglycerides_mmol_l": "manual_edit",
+                "hdl_mmol_l": "manual_edit",
+                "fat_pct": "import",
+                "water_pct": "import",
+                "skeletal_muscle_weight_kg": "import",
+            },
+        },
+    )
+
+    assert normalized["visceral_adiposity_index"] == 1.01
+    assert normalized["source_metric_map"]["visceral_adiposity_index"] == "vai_estimated"
+    assert normalized["status_by_metric"]["visceral_adiposity_index"] == "healthy"
+
+
 def test_normalize_measurement_prefers_bia_calibration_over_anthropometric_fallback(
     monkeypatch,
     tmp_path: Path,

@@ -2,7 +2,9 @@ import { useMemo, useState, type ReactNode } from "react";
 
 import {
   hasAnthropometricEstimate,
+  hasVaiEstimate,
   isAnthropometricEstimate,
+  isVaiEstimate,
 } from "../lib/measurementSources";
 import type { Measurement, Profile } from "../lib/types";
 import { formatDateTime } from "../lib/dates";
@@ -11,6 +13,14 @@ type HistoryTableProps = {
   measurements: Measurement[];
   profiles: Profile[];
   selectedProfileId?: number | null;
+  onUpdateMeasurement: (
+    measurementId: number,
+    payload: {
+      waist_cm?: number | null;
+      triglycerides_mmol_l?: number | null;
+      hdl_mmol_l?: number | null;
+    },
+  ) => Promise<void>;
   onReassign: (measurementId: number, profileId: number) => Promise<void>;
   onDelete: (measurementId: number) => Promise<void>;
   eyebrow?: string;
@@ -41,6 +51,7 @@ export function HistoryTable({
   measurements,
   profiles,
   selectedProfileId,
+  onUpdateMeasurement,
   onReassign,
   onDelete,
   eyebrow = "History",
@@ -48,8 +59,13 @@ export function HistoryTable({
   emptyMessage = "No measurements found for this range yet.",
 }: HistoryTableProps) {
   const [busyMeasurementId, setBusyMeasurementId] = useState<number | null>(null);
+  const [editingWaistMeasurementId, setEditingWaistMeasurementId] = useState<number | null>(null);
   const [targetProfileIds, setTargetProfileIds] = useState<Record<number, number>>({});
+  const [waistDrafts, setWaistDrafts] = useState<Record<number, string>>({});
+  const [triglycerideDrafts, setTriglycerideDrafts] = useState<Record<number, string>>({});
+  const [hdlDrafts, setHdlDrafts] = useState<Record<number, string>>({});
   const showEstimateNote = hasAnthropometricEstimate(measurements);
+  const showVaiNote = hasVaiEstimate(measurements);
 
   const defaultTargets = useMemo(() => {
     const mapping: Record<number, number> = {};
@@ -75,16 +91,23 @@ export function HistoryTable({
           weight when the scale does not provide them.
         </p>
       ) : null}
+      {showVaiNote ? (
+        <p className="compact-copy muted history-source-note">
+          Visceral index is estimated from waist, BMI, triglycerides, and HDL when those values
+          are available.
+        </p>
+      ) : null}
       <div className="history-table-wrapper">
         <table className="history-table">
           <thead>
             <tr>
               <th>Date</th>
               <th>Weight</th>
+              <th>Waist</th>
               <th>Fat</th>
               <th>Water</th>
               <th>SMM</th>
-              <th>V-Fat</th>
+              <th>V-Index</th>
               <th>BMI</th>
               <th>Status</th>
               <th>Profile</th>
@@ -94,7 +117,7 @@ export function HistoryTable({
           <tbody>
             {measurements.length === 0 ? (
               <tr>
-                <td className="history-empty" colSpan={10}>
+                <td className="history-empty" colSpan={11}>
                   {emptyMessage}
                 </td>
               </tr>
@@ -105,6 +128,145 @@ export function HistoryTable({
                 <tr key={measurement.id}>
                   <td>{formatDateTime(measurement.measured_at)}</td>
                   <td>{measurement.weight_kg} kg</td>
+                  <td>
+                    {editingWaistMeasurementId === measurement.id ? (
+                      <div className="waist-editor">
+                        <input
+                          aria-label={`Waist for measurement ${measurement.id}`}
+                          className="waist-input"
+                          type="number"
+                          min="1"
+                          placeholder="Waist (cm)"
+                          value={
+                            waistDrafts[measurement.id] ??
+                            (measurement.waist_cm !== null && measurement.waist_cm !== undefined
+                              ? String(measurement.waist_cm)
+                              : "")
+                          }
+                          onChange={(event) =>
+                            setWaistDrafts((current) => ({
+                              ...current,
+                              [measurement.id]: event.target.value,
+                            }))
+                          }
+                        />
+                        <input
+                          aria-label={`Triglycerides for measurement ${measurement.id}`}
+                          className="waist-input"
+                          type="number"
+                          min="0.1"
+                          step="0.01"
+                          placeholder="Triglycerides (mmol/L)"
+                          value={
+                            triglycerideDrafts[measurement.id] ??
+                            (measurement.triglycerides_mmol_l !== null &&
+                            measurement.triglycerides_mmol_l !== undefined
+                              ? String(measurement.triglycerides_mmol_l)
+                              : "")
+                          }
+                          onChange={(event) =>
+                            setTriglycerideDrafts((current) => ({
+                              ...current,
+                              [measurement.id]: event.target.value,
+                            }))
+                          }
+                        />
+                        <input
+                          aria-label={`HDL for measurement ${measurement.id}`}
+                          className="waist-input"
+                          type="number"
+                          min="0.1"
+                          step="0.01"
+                          placeholder="HDL (mmol/L)"
+                          value={
+                            hdlDrafts[measurement.id] ??
+                            (measurement.hdl_mmol_l !== null &&
+                            measurement.hdl_mmol_l !== undefined
+                              ? String(measurement.hdl_mmol_l)
+                              : "")
+                          }
+                          onChange={(event) =>
+                            setHdlDrafts((current) => ({
+                              ...current,
+                              [measurement.id]: event.target.value,
+                            }))
+                          }
+                        />
+                        <p className="compact-copy muted inline-helper">
+                          Waist updates this row immediately. Add triglycerides and HDL to unlock
+                          visceral index estimates.
+                        </p>
+                        <div className="action-row compact">
+                          <button
+                            className="ghost-button compact-button"
+                            disabled={busyMeasurementId === measurement.id}
+                            onClick={async () => {
+                              setBusyMeasurementId(measurement.id);
+                              try {
+                                const rawValue = waistDrafts[measurement.id];
+                                await onUpdateMeasurement(measurement.id, {
+                                  waist_cm: rawValue ? Number(rawValue) : null,
+                                  triglycerides_mmol_l: triglycerideDrafts[measurement.id]
+                                    ? Number(triglycerideDrafts[measurement.id])
+                                    : null,
+                                  hdl_mmol_l: hdlDrafts[measurement.id]
+                                    ? Number(hdlDrafts[measurement.id])
+                                    : null,
+                                });
+                                setEditingWaistMeasurementId(null);
+                              } finally {
+                                setBusyMeasurementId(null);
+                              }
+                            }}
+                            type="button"
+                          >
+                            Save
+                          </button>
+                          <button
+                            className="ghost-button compact-button"
+                            disabled={busyMeasurementId === measurement.id}
+                            onClick={() => {
+                              setEditingWaistMeasurementId(null);
+                              setWaistDrafts((current) => {
+                                const next = { ...current };
+                                delete next[measurement.id];
+                                return next;
+                              });
+                              setTriglycerideDrafts((current) => {
+                                const next = { ...current };
+                                delete next[measurement.id];
+                                return next;
+                              });
+                              setHdlDrafts((current) => {
+                                const next = { ...current };
+                                delete next[measurement.id];
+                                return next;
+                              });
+                            }}
+                            type="button"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="metric-value-with-source">
+                        <span>
+                          {measurement.waist_cm !== null && measurement.waist_cm !== undefined
+                            ? `${measurement.waist_cm} cm`
+                            : "—"}
+                        </span>
+                        <button
+                          className="ghost-button compact-button inline-button"
+                          disabled={busyMeasurementId === measurement.id}
+                          onClick={() => setEditingWaistMeasurementId(measurement.id)}
+                          type="button"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    )}
+                  </td>
                   <td>
                     {renderPercentValue(
                       measurement.fat_pct,
@@ -130,7 +292,19 @@ export function HistoryTable({
                       "—"
                     )}
                   </td>
-                  <td>{measurement.visceral_fat ?? "—"}</td>
+                  <td>
+                    {measurement.visceral_adiposity_index !== null &&
+                    measurement.visceral_adiposity_index !== undefined ? (
+                      <span className="metric-value-with-source">
+                        <span>{measurement.visceral_adiposity_index}</span>
+                        {isVaiEstimate(measurement, "visceral_adiposity_index") ? (
+                          <span className="status-tag compact estimated">Est.</span>
+                        ) : null}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td>{measurement.bmi ?? "—"}</td>
                   <td>
                     <span className={`status-tag compact ${pending ? "high" : "healthy"}`}>

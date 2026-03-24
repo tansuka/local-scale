@@ -10,7 +10,6 @@ const dashboardPayload = {
       sex: "male",
       birth_date: "1989-08-17",
       height_cm: 181,
-      waist_cm: 84,
       units: "metric",
       color: "#0f766e",
       active: true,

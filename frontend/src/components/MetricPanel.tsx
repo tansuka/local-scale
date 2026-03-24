@@ -1,6 +1,9 @@
 import { useMemo, useState } from "react";
 
-import { isAnthropometricEstimate } from "../lib/measurementSources";
+import {
+  isEstimatedMetric,
+  isVaiEstimate,
+} from "../lib/measurementSources";
 import type { Measurement, Profile } from "../lib/types";
 import { formatDateTime } from "../lib/dates";
 
@@ -11,12 +14,12 @@ type MetricPanelProps = {
 
 type MetricKey =
   | "weight_kg"
+  | "waist_cm"
   | "bmi"
   | "fat_pct"
   | "skeletal_muscle_weight_kg"
-  | "muscle_pct"
   | "water_pct"
-  | "visceral_fat"
+  | "visceral_adiposity_index"
   | "bmr_kcal"
   | "body_age";
 
@@ -47,6 +50,13 @@ const METRICS: MetricDefinition[] = [
       "Weight is best read as a trend. Short-term jumps are worth attention, especially when they move with BMI and fat percentage.",
   },
   {
+    key: "waist_cm",
+    label: "Waist",
+    unit: "cm",
+    description:
+      "Waist circumference helps track abdominal size over time. It is useful supporting context for future visceral-fat estimation and overall risk tracking.",
+  },
+  {
     key: "bmi",
     label: "BMI",
     unit: "",
@@ -68,13 +78,6 @@ const METRICS: MetricDefinition[] = [
       "Skeletal muscle mass estimates how much movement-producing muscle tissue you carry. This is best compared over time and against your height, not against body weight alone.",
   },
   {
-    key: "muscle_pct",
-    label: "Muscle",
-    unit: "%",
-    description:
-      "Muscle percentage helps show how much lean tissue you are carrying. Healthy changes usually move more gradually than weight.",
-  },
-  {
     key: "water_pct",
     label: "Water",
     unit: "%",
@@ -82,11 +85,11 @@ const METRICS: MetricDefinition[] = [
       "Water percentage can swing with hydration, exercise, and salt intake. Use it as a signal over time rather than a one-off verdict.",
   },
   {
-    key: "visceral_fat",
-    label: "V-Fat",
+    key: "visceral_adiposity_index",
+    label: "Visceral Index",
     unit: "",
     description:
-      "Visceral fat estimates the fat around internal organs. Higher values deserve attention because they often move with long-term metabolic risk.",
+      "Visceral index estimates abdominal-metabolic risk from waist circumference, BMI, triglycerides, and HDL. It is best read as a trend marker, not as an exact amount of visceral fat in kilograms.",
   },
   {
     key: "bmr_kcal",
@@ -108,7 +111,26 @@ function roundDisplay(value: number): number {
   return Number(value.toFixed(value >= 10 ? 1 : 2));
 }
 
-function bandForMetric(metric: MetricKey, profile?: Profile | null): MetricBand | null {
+function ageOn(birthDate: string, measurementDate: string): number {
+  const birth = new Date(`${birthDate}T00:00:00Z`);
+  const measured = new Date(measurementDate);
+  let years = measured.getUTCFullYear() - birth.getUTCFullYear();
+  const measuredMonthDay = [measured.getUTCMonth(), measured.getUTCDate()];
+  const birthMonthDay = [birth.getUTCMonth(), birth.getUTCDate()];
+  if (
+    measuredMonthDay[0] < birthMonthDay[0] ||
+    (measuredMonthDay[0] === birthMonthDay[0] && measuredMonthDay[1] < birthMonthDay[1])
+  ) {
+    years -= 1;
+  }
+  return years;
+}
+
+function bandForMetric(
+  metric: MetricKey,
+  profile?: Profile | null,
+  measurement?: Measurement | null,
+): MetricBand | null {
   const isMale = profile?.sex?.toLowerCase().startsWith("m") ?? false;
   switch (metric) {
     case "weight_kg": {
@@ -125,6 +147,10 @@ function bandForMetric(metric: MetricKey, profile?: Profile | null): MetricBand 
     }
     case "bmi":
       return { healthyLow: 18.5, healthyHigh: 24.9, obeseHigh: 24.9 * 1.2 };
+    case "waist_cm":
+      return isMale
+        ? { healthyLow: 75, healthyHigh: 94, obeseHigh: 102 }
+        : { healthyLow: 70, healthyHigh: 80, obeseHigh: 88 };
     case "fat_pct":
       return isMale
         ? { healthyLow: 8, healthyHigh: 20, obeseHigh: 24 }
@@ -146,16 +172,29 @@ function bandForMetric(metric: MetricKey, profile?: Profile | null): MetricBand 
         saturatesHigh: true,
       };
     }
-    case "muscle_pct":
-      return isMale
-        ? { healthyLow: 38, healthyHigh: 50, obeseHigh: 60 }
-        : { healthyLow: 28, healthyHigh: 40, obeseHigh: 48 };
     case "water_pct":
       return isMale
         ? { healthyLow: 50, healthyHigh: 65, obeseHigh: 78 }
         : { healthyLow: 45, healthyHigh: 60, obeseHigh: 72 };
-    case "visceral_fat":
-      return { healthyLow: 1, healthyHigh: 12, obeseHigh: 14.4 };
+    case "visceral_adiposity_index": {
+      if (!profile?.birth_date || !measurement?.measured_at) {
+        return null;
+      }
+      const ageYears = ageOn(profile.birth_date, measurement.measured_at);
+      if (ageYears < 30) {
+        return { healthyLow: 0.1, healthyHigh: 2.52, obeseHigh: 2.73 };
+      }
+      if (ageYears < 42) {
+        return { healthyLow: 0.1, healthyHigh: 2.23, obeseHigh: 3.12 };
+      }
+      if (ageYears < 52) {
+        return { healthyLow: 0.1, healthyHigh: 1.92, obeseHigh: 2.77 };
+      }
+      if (ageYears < 66) {
+        return { healthyLow: 0.1, healthyHigh: 1.93, obeseHigh: 3.25 };
+      }
+      return { healthyLow: 0.1, healthyHigh: 2.0, obeseHigh: 3.17 };
+    }
     default:
       return null;
   }
@@ -231,10 +270,11 @@ export function MetricPanel({ measurement, profile }: MetricPanelProps) {
   const activeMetric = METRICS.find((metric) => metric.key === activeMetricKey) ?? METRICS[0];
   const activeValueRaw = measurement?.[activeMetric.key];
   const activeValue = typeof activeValueRaw === "number" ? activeValueRaw : null;
-  const activeBand = bandForMetric(activeMetric.key, profile);
-  const activeStatus = classifyValue(activeValue, activeBand);
+  const activeBand = bandForMetric(activeMetric.key, profile, measurement);
+  const activeStatus =
+    measurement?.status_by_metric?.[activeMetric.key] ?? classifyValue(activeValue, activeBand);
   const activeMarkerPosition = markerPosition(activeValue, activeBand);
-  const activeIsEstimated = isAnthropometricEstimate(measurement, activeMetric.key);
+  const activeIsEstimated = isEstimatedMetric(measurement, activeMetric.key);
   const bandLabels = labelsForBand(activeBand);
 
   return (
@@ -250,10 +290,11 @@ export function MetricPanel({ measurement, profile }: MetricPanelProps) {
         {METRICS.map((metric) => {
           const value = measurement?.[metric.key];
           const numericValue = typeof value === "number" ? value : null;
-          const band = bandForMetric(metric.key, profile);
-          const status = classifyValue(numericValue, band);
+          const band = bandForMetric(metric.key, profile, measurement);
+          const status =
+            measurement?.status_by_metric?.[metric.key] ?? classifyValue(numericValue, band);
           const isActive = metric.key === activeMetricKey;
-          const isEstimated = isAnthropometricEstimate(measurement, metric.key);
+          const isEstimated = isEstimatedMetric(measurement, metric.key);
           return (
             <button
               key={metric.key}
@@ -319,8 +360,9 @@ export function MetricPanel({ measurement, profile }: MetricPanelProps) {
         <p className="metric-detail-copy">{activeMetric.description}</p>
         {activeIsEstimated ? (
           <p className="metric-source-note">
-            Estimated from sex, age, height, and weight. This value was not read directly from
-            the scale.
+            {isVaiEstimate(measurement, activeMetric.key)
+              ? "Estimated from waist, BMI, triglycerides, and HDL. This value was not read directly from the scale."
+              : "Estimated from sex, age, height, and weight. This value was not read directly from the scale."}
           </p>
         ) : null}
       </div>

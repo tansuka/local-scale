@@ -10,17 +10,25 @@ type TrendsPanelProps = {
   measurements: Measurement[];
   profiles: Profile[];
   selectedProfileId?: number | null;
+  onUpdateMeasurement: (
+    measurementId: number,
+    payload: {
+      waist_cm?: number | null;
+      triglycerides_mmol_l?: number | null;
+      hdl_mmol_l?: number | null;
+    },
+  ) => Promise<void>;
   onReassign: (measurementId: number, profileId: number) => Promise<void>;
   onDelete: (measurementId: number) => Promise<void>;
 };
 
 const METRIC_OPTIONS = [
   { key: "weight_kg", label: "Weight", unit: "kg" },
+  { key: "waist_cm", label: "Waist", unit: "cm" },
   { key: "fat_pct", label: "Fat %", unit: "%" },
   { key: "water_pct", label: "Water %", unit: "%" },
-  { key: "muscle_pct", label: "Muscle %", unit: "%" },
   { key: "skeletal_muscle_weight_kg", label: "Skeletal Muscle", unit: "kg" },
-  { key: "visceral_fat", label: "Visceral Fat", unit: "" },
+  { key: "visceral_adiposity_index", label: "Visceral Index", unit: "" },
   { key: "bmi", label: "BMI", unit: "" },
   { key: "bmr_kcal", label: "Metabolism", unit: "kcal" },
 ] as const;
@@ -67,6 +75,7 @@ export function TrendsPanel({
   measurements,
   profiles,
   selectedProfileId,
+  onUpdateMeasurement,
   onReassign,
   onDelete,
 }: TrendsPanelProps) {
@@ -243,6 +252,7 @@ export function TrendsPanel({
         profiles={profiles}
         selectedProfileId={selectedProfileId}
         onDelete={onDelete}
+        onUpdateMeasurement={onUpdateMeasurement}
         onReassign={onReassign}
         eyebrow="Measurements"
         title={`All weigh-ins in ${range === "all" ? "full history" : "this range"}`}

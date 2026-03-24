@@ -614,6 +614,16 @@ select {
   padding: 0.38rem 0.7rem;
 }
 
+.compact-button {
+  padding: 0.38rem 0.7rem;
+  font-size: 0.8rem;
+}
+
+.inline-button {
+  padding: 0.2rem 0.55rem;
+  font-size: 0.75rem;
+}
+
 .icon-button {
   display: inline-flex;
   align-items: center;
@@ -622,6 +632,21 @@ select {
   min-width: 2rem;
   height: 2rem;
   padding: 0;
+}
+
+.waist-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.waist-input {
+  width: 84px;
+  border-radius: 12px;
+  border: 1px solid rgba(246, 232, 215, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  padding: 0.4rem 0.55rem;
 }
 
 .action-icon {

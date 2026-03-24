@@ -60,6 +60,21 @@ export function deleteMeasurement(measurementId: number): Promise<void> {
   });
 }
 
+export function updateMeasurement(
+  measurementId: number,
+  payload: {
+    waist_cm?: number | null;
+    triglycerides_mmol_l?: number | null;
+    hdl_mmol_l?: number | null;
+  },
+): Promise<Measurement> {
+  return request<Measurement>(`/api/measurements/${measurementId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
 export function fetchCharts(profileId: number): Promise<ChartResponse> {
   return request<ChartResponse>(`/api/charts/${profileId}`);
 }

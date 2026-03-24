@@ -66,6 +66,14 @@ class SessionManager:
     def _serialize_session(session: WeighSession) -> dict[str, Any]:
         return WeighSessionRead.model_validate(session).model_dump(mode="json")
 
+    @staticmethod
+    def _latest_known_value(recent_measurements: list[Any], field_name: str) -> float | None:
+        for measurement in recent_measurements:
+            value = getattr(measurement, field_name, None)
+            if value is not None:
+                return float(value)
+        return None
+
     def latest(self, db: Session) -> WeighSession | None:
         return latest_session(db)
 
@@ -143,6 +151,14 @@ class SessionManager:
 
             recent = recent_measurements(db, profile.id, limit=14)
             raw_measurement = await self._adapter.capture_measurement(profile, recent)
+            if raw_measurement.get("waist_cm") is None:
+                latest_known_waist = self._latest_known_value(recent, "waist_cm")
+                if latest_known_waist is not None:
+                    raw_measurement["waist_cm"] = latest_known_waist
+                    raw_measurement["source_metric_map"] = {
+                        **dict(raw_measurement.get("source_metric_map", {}) or {}),
+                        "waist_cm": "carried_forward",
+                    }
             if self._session_was_cancelled(db, session_id):
                 raise asyncio.CancelledError
             normalized = normalize_measurement(profile, raw_measurement)

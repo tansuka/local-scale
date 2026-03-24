@@ -33,6 +33,17 @@ def add_measurement(db: Session, payload: dict) -> Measurement:
     return measurement
 
 
+def update_measurement(db: Session, measurement_id: int, payload: dict) -> Measurement | None:
+    measurement = db.get(Measurement, measurement_id)
+    if measurement is None:
+        return None
+    for key, value in payload.items():
+        setattr(measurement, key, value)
+    db.commit()
+    db.refresh(measurement)
+    return measurement
+
+
 def reassign_measurement(db: Session, measurement_id: int, profile_id: int) -> Measurement | None:
     measurement = db.get(Measurement, measurement_id)
     if measurement is None:
@@ -63,6 +74,22 @@ def chart_series(db: Session, profile_id: int) -> dict[str, list[Measurement]]:
         ).all()
     )
     return {"rows": rows}
+
+
+def latest_known_measurement_value(
+    db: Session,
+    *,
+    profile_id: int,
+    field_name: str,
+    measured_at: datetime | None = None,
+) -> float | None:
+    field = getattr(Measurement, field_name)
+    query = select(field).where(Measurement.profile_id == profile_id).where(field.is_not(None))
+    if measured_at is not None:
+        query = query.where(Measurement.measured_at <= measured_at)
+    query = query.order_by(desc(Measurement.measured_at)).limit(1)
+    value = db.scalar(query)
+    return float(value) if value is not None else None
 
 
 def is_duplicate(

@@ -3,13 +3,14 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Measurement
 from app.models import Profile
 
 ANTHROPOMETRIC_SOURCE = "anthropometric_estimated"
+VAI_SOURCE = "vai_estimated"
 METRIC_RANGES: dict[str, tuple[float, float]] = {
     "fat_pct": (3.0, 70.0),
     "water_pct": (20.0, 80.0),
@@ -95,13 +96,52 @@ def estimate_water_pct(*, profile: Profile, weight_kg: float) -> float:
     return round(_clamp("water_pct", water_pct), 2)
 
 
+def estimate_visceral_adiposity_index(
+    *,
+    profile: Profile,
+    weight_kg: float,
+    waist_cm: float | None,
+    triglycerides_mmol_l: float | None,
+    hdl_mmol_l: float | None,
+    measurement_date: date,
+) -> float | None:
+    if waist_cm is None or triglycerides_mmol_l is None or hdl_mmol_l is None:
+        return None
+    age_years = age_on(profile.birth_date, measurement_date)
+    if age_years < 16:
+        return None
+    height_m = float(profile.height_cm) / 100.0
+    bmi = weight_kg / (height_m**2)
+    if bmi <= 0 or bmi >= 40 or triglycerides_mmol_l <= 0 or hdl_mmol_l <= 0:
+        return None
+    if triglycerides_mmol_l > 3.15:
+        return None
+
+    if profile.sex.lower().startswith("m"):
+        value = (
+            (waist_cm / (39.68 + (1.88 * bmi)))
+            * (triglycerides_mmol_l / 1.03)
+            * (1.31 / hdl_mmol_l)
+        )
+    else:
+        value = (
+            (waist_cm / (36.58 + (1.89 * bmi)))
+            * (triglycerides_mmol_l / 0.81)
+            * (1.52 / hdl_mmol_l)
+        )
+    return round(max(value, 0.1), 2)
+
+
 def estimate_metrics(
     *,
     profile: Profile,
     weight_kg: float,
+    waist_cm: float | None = None,
+    triglycerides_mmol_l: float | None = None,
+    hdl_mmol_l: float | None = None,
     measurement_date: date,
 ) -> dict[str, float]:
-    return {
+    estimates = {
         "fat_pct": estimate_fat_pct(
             profile=profile,
             weight_kg=weight_kg,
@@ -117,6 +157,17 @@ def estimate_metrics(
             weight_kg=weight_kg,
         ),
     }
+    visceral_adiposity_index = estimate_visceral_adiposity_index(
+        profile=profile,
+        weight_kg=weight_kg,
+        waist_cm=waist_cm,
+        triglycerides_mmol_l=triglycerides_mmol_l,
+        hdl_mmol_l=hdl_mmol_l,
+        measurement_date=measurement_date,
+    )
+    if visceral_adiposity_index is not None:
+        estimates["visceral_adiposity_index"] = visceral_adiposity_index
+    return estimates
 
 
 def backfill_missing_measurements(db: Session) -> int:
@@ -124,15 +175,7 @@ def backfill_missing_measurements(db: Session) -> int:
         db.execute(
             select(Measurement, Profile)
             .join(Profile, Measurement.profile_id == Profile.id)
-            .where(
-                or_(
-                    Measurement.fat_pct.is_(None),
-                    Measurement.water_pct.is_(None),
-                    Measurement.fat_weight_kg.is_(None),
-                    Measurement.water_weight_kg.is_(None),
-                    Measurement.skeletal_muscle_weight_kg.is_(None),
-                )
-            )
+            .order_by(Profile.id.asc(), Measurement.measured_at.asc(), Measurement.id.asc())
         ).all()
     )
     if not rows:
@@ -141,7 +184,15 @@ def backfill_missing_measurements(db: Session) -> int:
     from app.services.metrics import normalize_measurement
 
     updated = 0
+    last_known_waist_by_profile: dict[int, float] = {}
     for measurement, profile in rows:
+        waist_cm = measurement.waist_cm
+        source_metric_map = dict(measurement.source_metric_map or {})
+        if waist_cm is None:
+            waist_cm = last_known_waist_by_profile.get(profile.id)
+            if waist_cm is not None and "waist_cm" not in source_metric_map:
+                source_metric_map["waist_cm"] = "carried_forward"
+
         normalized = normalize_measurement(
             profile,
             {
@@ -149,6 +200,9 @@ def backfill_missing_measurements(db: Session) -> int:
                 "measurement_date": measurement.measured_at.date(),
                 "source": measurement.source,
                 "weight_kg": measurement.weight_kg,
+                "waist_cm": waist_cm,
+                "triglycerides_mmol_l": measurement.triglycerides_mmol_l,
+                "hdl_mmol_l": measurement.hdl_mmol_l,
                 "bmi": measurement.bmi,
                 "fat_pct": measurement.fat_pct,
                 "fat_weight_kg": measurement.fat_weight_kg,
@@ -157,13 +211,14 @@ def backfill_missing_measurements(db: Session) -> int:
                 "muscle_pct": measurement.muscle_pct,
                 "muscle_weight_kg": measurement.muscle_weight_kg,
                 "visceral_fat": measurement.visceral_fat,
+                "visceral_adiposity_index": measurement.visceral_adiposity_index,
                 "water_pct": measurement.water_pct,
                 "water_weight_kg": measurement.water_weight_kg,
                 "bone_weight_kg": measurement.bone_weight_kg,
                 "bmr_kcal": measurement.bmr_kcal,
                 "metabolic_age": measurement.metabolic_age,
                 "body_age": measurement.body_age,
-                "source_metric_map": dict(measurement.source_metric_map or {}),
+                "source_metric_map": source_metric_map,
                 "raw_payload_json": dict(measurement.raw_payload_json or {}),
             },
         )
@@ -175,6 +230,8 @@ def backfill_missing_measurements(db: Session) -> int:
             if getattr(measurement, field) != value:
                 setattr(measurement, field, value)
                 changed = True
+        if measurement.waist_cm is not None:
+            last_known_waist_by_profile[profile.id] = float(measurement.waist_cm)
         if changed:
             updated += 1
 

@@ -11,6 +11,7 @@ import {
   previewImport,
   reassignMeasurement,
   startSession,
+  updateMeasurement,
   updateProfile,
 } from "./lib/api";
 import type {
@@ -197,9 +198,7 @@ export function App() {
                   <h2>{selectedProfile?.name ?? "No profile selected"}</h2>
                   <p className="muted">
                     {selectedProfile
-                      ? `${selectedProfile.sex}, ${selectedProfile.height_cm} cm${
-                          selectedProfile.waist_cm ? `, waist ${selectedProfile.waist_cm} cm` : ""
-                        }. ${
+                      ? `${selectedProfile.sex}, ${selectedProfile.height_cm} cm. ${
                           pendingCount > 0
                             ? `${pendingCount} weigh-in${pendingCount > 1 ? "s" : ""} need review.`
                             : "Everything is saved cleanly."
@@ -270,6 +269,18 @@ export function App() {
               measurements={measurements}
               profiles={profiles}
               selectedProfileId={selectedProfileId}
+              onUpdateMeasurement={async (measurementId, payload) => {
+                const updated = await updateMeasurement(measurementId, payload);
+                setMeasurements((current) =>
+                  current.map((measurement) =>
+                    measurement.id === updated.id ? updated : measurement,
+                  ),
+                );
+                if (selectedProfileId === updated.profile_id) {
+                  const nextCharts = await fetchCharts(updated.profile_id);
+                  setCharts(nextCharts);
+                }
+              }}
               onDelete={async (measurementId) => {
                 await deleteMeasurement(measurementId);
                 await hydrateDashboard(selectedProfileId);

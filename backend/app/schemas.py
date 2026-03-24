@@ -18,7 +18,6 @@ class ProfileCreate(BaseModel):
     sex: str
     birth_date: date
     height_cm: float = Field(gt=0)
-    waist_cm: float | None = Field(default=None, gt=0)
     units: str = "metric"
     color: str = "#0f766e"
     notes: str | None = None
@@ -43,6 +42,9 @@ class MeasurementRead(BaseModel):
     anomaly_score: float
     note: str | None = None
     weight_kg: float
+    waist_cm: float | None = None
+    triglycerides_mmol_l: float | None = None
+    hdl_mmol_l: float | None = None
     bmi: float | None = None
     fat_pct: float | None = None
     fat_weight_kg: float | None = None
@@ -51,6 +53,7 @@ class MeasurementRead(BaseModel):
     muscle_pct: float | None = None
     muscle_weight_kg: float | None = None
     visceral_fat: float | None = None
+    visceral_adiposity_index: float | None = None
     water_pct: float | None = None
     water_weight_kg: float | None = None
     bone_weight_kg: float | None = None
@@ -68,6 +71,12 @@ class MeasurementRead(BaseModel):
 
 class MeasurementReassignRequest(BaseModel):
     profile_id: int
+
+
+class MeasurementUpdateRequest(BaseModel):
+    waist_cm: float | None = Field(default=None, gt=0)
+    triglycerides_mmol_l: float | None = Field(default=None, gt=0)
+    hdl_mmol_l: float | None = Field(default=None, gt=0)
 
 
 class ChartPoint(BaseModel):
@@ -113,6 +122,7 @@ class ImportPreviewRow(BaseModel):
     measured_at: datetime | None
     profile_name: str | None
     weight_kg: float | None
+    waist_cm: float | None = None
     bmi: float | None = None
     fat_pct: float | None = None
     water_pct: float | None = None
