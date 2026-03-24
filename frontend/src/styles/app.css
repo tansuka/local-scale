@@ -167,6 +167,9 @@ textarea {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 1rem;
   align-items: center;
+  position: relative;
+  isolation: isolate;
+  z-index: 40;
   margin-bottom: 1rem;
   padding-top: 1rem;
   padding-bottom: 1rem;
