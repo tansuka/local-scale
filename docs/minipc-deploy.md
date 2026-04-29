@@ -37,12 +37,10 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now local-scale
 ```
 
-## Bluetooth Reality Check
+## Bluetooth Scan Tuning
 
-The live adapter can already discover likely OKOK-compatible devices, but it still needs a real packet capture from the MiniPC to finish the Soundlogic/OKOK decoder. Each live scan now writes a JSON capture under `LOCAL_SCALE_BLE_CAPTURE_DIR` or, by default, `<LOCAL_SCALE_DATA_DIR>/ble-captures/`.
+The live adapter decodes weight from Chipsea compact advertisement packets broadcast by the scale. Each live scan writes a JSON capture under `LOCAL_SCALE_BLE_CAPTURE_DIR` or, by default, `<LOCAL_SCALE_DATA_DIR>/ble-captures/`.
 
 If OKOK shows a specific BLE MAC, set it in `LOCAL_SCALE_TARGET_ADDRESSES` so the scanner can highlight exact address matches even when the device name is hidden. You can also widen the scan window with `LOCAL_SCALE_BLE_SCAN_TIMEOUT_SECONDS` when the scale only advertises briefly after you step on it.
 
-When the target scale is matched, the live adapter now attempts a direct BLE connection, dumps the GATT services/characteristics into the same JSON capture, and listens briefly on notify/indicate characteristics. Tune that phase with `LOCAL_SCALE_BLE_CONNECT_TIMEOUT_SECONDS` and `LOCAL_SCALE_BLE_NOTIFY_CAPTURE_SECONDS` if the scale is slow to connect or only emits packets for a short window.
-
-For flaky advertising, the adapter can now repeat the scan in multiple rounds before it gives up. Use `LOCAL_SCALE_BLE_SCAN_ROUNDS` and `LOCAL_SCALE_BLE_SCAN_PAUSE_SECONDS` to keep the MiniPC listening longer, and `LOCAL_SCALE_BLE_CONNECT_RETRIES` plus `LOCAL_SCALE_BLE_CONNECT_RETRY_PAUSE_SECONDS` to retry a direct connection after the scale is seen.
+For flaky advertising, the adapter repeats the scan in multiple rounds before it gives up. Use `LOCAL_SCALE_BLE_SCAN_ROUNDS` and `LOCAL_SCALE_BLE_SCAN_PAUSE_SECONDS` to keep the MiniPC listening longer.

@@ -11,10 +11,13 @@ from app.api.deps import get_db, get_events, get_health_analyzer, get_session_ma
 from app.db import Database
 from app.models import Measurement
 from app.repositories.measurements import (
+    add_measurement,
     chart_series,
     delete_measurement,
+    is_duplicate,
     list_measurements,
     reassign_measurement,
+    recent_measurements,
     update_measurement,
 )
 from app.repositories.profiles import create_profile, get_profile, list_profiles, update_profile
@@ -29,6 +32,7 @@ from app.schemas import (
     LlmSettingsUpdateRequest,
     MeasurementRead,
     MeasurementReassignRequest,
+    MeasurementSubmitRequest,
     MeasurementUpdateRequest,
     ProfileCreate,
     ProfileRead,
@@ -38,6 +42,7 @@ from app.schemas import (
 from app.services.events import EventBroker
 from app.services.imports import commit_csv_upload, preview_csv_upload
 from app.services.llm_health import LlmHealthAnalyzer
+from app.services.anomaly import anomaly_score, requires_confirmation
 from app.services.metrics import measurement_to_chart_value, normalize_measurement
 from app.services.sessions import SessionManager
 
@@ -194,6 +199,73 @@ def delete_measurement_route(
     deleted = delete_measurement(db, measurement_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Measurement not found")
+
+
+@router.post("/measurements/submit", response_model=MeasurementRead, status_code=201)
+async def post_submit_measurement(
+    payload: MeasurementSubmitRequest,
+    db: Session = Depends(get_db),
+    events: EventBroker = Depends(get_events),
+) -> MeasurementRead:
+    # 1. Validate profile
+    profile = get_profile(db, payload.profile_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    # 2. Check duplicate (same weight ±0.05kg within ±2 min window)
+    if is_duplicate(
+        db,
+        profile_id=profile.id,
+        measured_at=payload.measured_at,
+        weight_kg=payload.weight_kg,
+    ):
+        raise HTTPException(status_code=409, detail="Duplicate measurement")
+    # 3. Build raw dict and normalize (computes BMI, fat%, muscle%, etc.)
+    raw = {
+        "measured_at": payload.measured_at,
+        "source": payload.source,
+        "weight_kg": payload.weight_kg,
+        "raw_payload_json": payload.raw_payload_json,
+        "source_metric_map": payload.source_metric_map,
+    }
+    # Carry forward waist_cm from most recent measurement if available
+    recent = recent_measurements(db, profile.id, limit=14)
+    latest_waist = next(
+        (m.waist_cm for m in recent if m.waist_cm is not None), None
+    )
+    if latest_waist is not None:
+        raw["waist_cm"] = latest_waist
+        raw["source_metric_map"] = {
+            **raw["source_metric_map"],
+            "waist_cm": "carried_forward",
+        }
+    normalized = normalize_measurement(profile, raw)
+    # 4. Anomaly scoring
+    score = anomaly_score(recent, normalized)
+    needs_confirmation = requires_confirmation(score, normalized, recent)
+    # 5. Persist
+    stored = add_measurement(
+        db,
+        {
+            **normalized,
+            "profile_id": profile.id,
+            "assignment_state": "pending_confirmation" if needs_confirmation else "confirmed",
+            "confidence": round(max(0.05, 1.0 - score), 3),
+            "anomaly_score": score,
+            "note": (
+                "Needs confirmation — unusual reading for this profile."
+                if needs_confirmation
+                else "Saved from iOS."
+            ),
+        },
+    )
+    # 6. Broadcast to WebSocket clients
+    await events.broadcast(
+        {
+            "type": "measurement.created",
+            "measurement": MeasurementRead.model_validate(stored).model_dump(mode="json"),
+        }
+    )
+    return MeasurementRead.model_validate(stored)
 
 
 def _build_chart_response(profile_id: int, rows: list[Measurement]) -> ChartResponse:

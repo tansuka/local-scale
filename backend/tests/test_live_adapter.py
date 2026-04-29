@@ -29,10 +29,6 @@ def build_settings(tmp_path: Path) -> Settings:
         ble_scan_timeout_seconds=1.0,
         ble_scan_rounds=1,
         ble_scan_pause_seconds=0.0,
-        ble_connect_timeout_seconds=1.0,
-        ble_connect_retries=3,
-        ble_connect_retry_pause_seconds=0.0,
-        ble_notify_capture_seconds=0.0,
         seed_demo_data=False,
         target_scale_names=("Soundlogic", "OKOK", "Chipsea"),
         target_scale_addresses=("41:06:4A:9D:15:1E",),
@@ -256,7 +252,6 @@ def test_discover_targets_merges_target_history(monkeypatch, tmp_path: Path):
     assert len(matches) == 1
     assert len(matched_records) == 1
     assert [item["round"] for item in advertisement_history] == [1, 2]
-    assert adapter._has_two_matching_target_packets(advertisement_history) is True
 
 
 def test_discover_targets_stops_after_first_selected_compact_candidate(
@@ -303,7 +298,7 @@ def test_discover_targets_stops_after_first_selected_compact_candidate(
     assert adapter._has_selected_advertisement_candidate(advertisement_history) is True
 
 
-def test_capture_measurement_skips_protocol_fallback(monkeypatch, tmp_path: Path):
+def test_capture_measurement_raises_when_no_candidate(monkeypatch, tmp_path: Path):
     adapter = LiveBleAdapter(build_settings(tmp_path))
     device = SimpleNamespace(address="41:06:4A:9D:15:1E", name=None)
     match_payload = {
@@ -317,11 +312,7 @@ def test_capture_measurement_skips_protocol_fallback(monkeypatch, tmp_path: Path
     async def fake_discover_targets(self, scanner_cls):
         return [match_payload], [match_payload], [(match_payload, device)], 1, []
 
-    async def fail_capture_target_protocol(self, target_device, target_payload):
-        raise AssertionError("protocol capture should stay disabled")
-
     monkeypatch.setattr(LiveBleAdapter, "_discover_targets", fake_discover_targets)
-    monkeypatch.setattr(LiveBleAdapter, "_capture_target_protocol", fail_capture_target_protocol)
 
     with pytest.raises(ScaleAdapterError) as exc_info:
         asyncio.run(adapter.capture_measurement(SimpleNamespace(name="Tansu"), []))

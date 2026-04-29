@@ -142,10 +142,7 @@ class LiveBleAdapter(ScaleAdapter):
         self._scan_timeout_seconds = settings.ble_scan_timeout_seconds
         self._scan_rounds = settings.ble_scan_rounds
         self._scan_pause_seconds = settings.ble_scan_pause_seconds
-        self._connect_timeout_seconds = settings.ble_connect_timeout_seconds
-        self._connect_retries = settings.ble_connect_retries
-        self._connect_retry_pause_seconds = settings.ble_connect_retry_pause_seconds
-        self._notify_capture_seconds = settings.ble_notify_capture_seconds
+
 
     def expected_capture_seconds(self) -> float:
         scan_window = (self._scan_rounds * self._scan_timeout_seconds) + (
@@ -586,42 +583,7 @@ class LiveBleAdapter(ScaleAdapter):
             "selected_candidate": selected_candidate,
         }
 
-    @staticmethod
-    def _advertisement_fingerprint(event: dict[str, Any]) -> tuple[Any, ...]:
-        manufacturer_data = tuple(
-            sorted((str(key), str(value)) for key, value in (event.get("manufacturer_data") or {}).items())
-        )
-        service_data = tuple(
-            sorted((str(key), str(value)) for key, value in (event.get("service_data") or {}).items())
-        )
-        service_uuids = tuple(str(item) for item in (event.get("service_uuids") or []))
-        return (
-            str(event.get("normalized_address") or event.get("address") or ""),
-            manufacturer_data,
-            service_data,
-            service_uuids,
-        )
 
-    @classmethod
-    def _has_two_matching_target_packets(
-        cls,
-        advertisement_history: list[dict[str, Any]],
-    ) -> bool:
-        if len(advertisement_history) < 2:
-            return False
-
-        analysis = cls._analyze_advertisement_history(advertisement_history)
-        selected_candidate = analysis.get("selected_candidate")
-        if selected_candidate is not None and int(selected_candidate.get("count", 0)) >= 2:
-            return True
-
-        counts: dict[tuple[Any, ...], int] = {}
-        for event in advertisement_history:
-            fingerprint = cls._advertisement_fingerprint(event)
-            counts[fingerprint] = counts.get(fingerprint, 0) + 1
-            if counts[fingerprint] >= 2:
-                return True
-        return False
 
     @classmethod
     def _has_selected_advertisement_candidate(
@@ -728,8 +690,6 @@ class LiveBleAdapter(ScaleAdapter):
                     )
             return round_payloads, round_matches, fallback_history
 
-        return list(seen_devices.values()), list(matched_targets.values()), advertisement_history
-
     async def _discover_targets(
         self,
         scanner_cls: Any,
@@ -782,260 +742,7 @@ class LiveBleAdapter(ScaleAdapter):
         )
         return raw_devices, matched_payloads, matched_records, rounds_completed, advertisement_history
 
-    @staticmethod
-    def _iter_services(services: Any) -> list[Any]:
-        known_services = getattr(services, "services", None)
-        if isinstance(known_services, dict):
-            return list(known_services.values())
-        return list(services or [])
 
-    @staticmethod
-    def _serialize_descriptor(descriptor: Any) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "handle": getattr(descriptor, "handle", None),
-            "uuid": getattr(descriptor, "uuid", None),
-        }
-        description = getattr(descriptor, "description", None)
-        if description:
-            payload["description"] = str(description)
-        return payload
-
-    @classmethod
-    async def _serialize_characteristic(
-        cls,
-        client: Any,
-        characteristic: Any,
-    ) -> dict[str, Any]:
-        properties = sorted(str(prop) for prop in (getattr(characteristic, "properties", None) or []))
-        payload: dict[str, Any] = {
-            "uuid": getattr(characteristic, "uuid", None),
-            "handle": getattr(characteristic, "handle", None),
-            "properties": properties,
-            "descriptors": [
-                cls._serialize_descriptor(descriptor)
-                for descriptor in (getattr(characteristic, "descriptors", None) or [])
-            ],
-        }
-        description = getattr(characteristic, "description", None)
-        if description:
-            payload["description"] = str(description)
-
-        if any(prop.lower() == "read" for prop in properties):
-            try:
-                read_value = await client.read_gatt_char(characteristic)
-                payload["read_value_hex"] = bytes(read_value).hex()
-            except Exception as exc:  # pragma: no cover - depends on runtime device behavior
-                payload["read_error"] = {
-                    "type": exc.__class__.__name__,
-                    "message": str(exc),
-                }
-        return payload
-
-    @classmethod
-    async def _serialize_gatt_services(
-        cls,
-        client: Any,
-        services: Any,
-    ) -> list[dict[str, Any]]:
-        serialized_services: list[dict[str, Any]] = []
-        for service in cls._iter_services(services):
-            service_payload: dict[str, Any] = {
-                "uuid": getattr(service, "uuid", None),
-                "handle": getattr(service, "handle", None),
-                "characteristics": [],
-            }
-            description = getattr(service, "description", None)
-            if description:
-                service_payload["description"] = str(description)
-
-            characteristics = []
-            for characteristic in (getattr(service, "characteristics", None) or []):
-                characteristics.append(await cls._serialize_characteristic(client, characteristic))
-            service_payload["characteristics"] = characteristics
-            serialized_services.append(service_payload)
-        return serialized_services
-
-    async def _capture_notifications(self, client: Any, services: Any) -> dict[str, Any]:
-        packets: list[dict[str, Any]] = []
-        dropped_packets = 0
-        subscriptions: list[dict[str, Any]] = []
-        errors: list[dict[str, Any]] = []
-        active_characteristics: list[Any] = []
-        max_packets = 200
-
-        def build_callback(characteristic_uuid: str):
-            def _callback(_: Any, data: bytearray) -> None:
-                nonlocal dropped_packets
-                if len(packets) >= max_packets:
-                    dropped_packets += 1
-                    return
-                packets.append(
-                    {
-                        "characteristic_uuid": characteristic_uuid,
-                        "received_at": datetime.now(timezone.utc).isoformat(),
-                        "data_hex": bytes(data).hex(),
-                    }
-                )
-
-            return _callback
-
-        for service in self._iter_services(services):
-            for characteristic in (getattr(service, "characteristics", None) or []):
-                properties = {
-                    str(prop).lower()
-                    for prop in (getattr(characteristic, "properties", None) or [])
-                }
-                if not properties.intersection({"notify", "indicate"}):
-                    continue
-                characteristic_uuid = str(getattr(characteristic, "uuid", "unknown"))
-                try:
-                    await client.start_notify(characteristic, build_callback(characteristic_uuid))
-                    active_characteristics.append(characteristic)
-                    subscriptions.append(
-                        {
-                            "characteristic_uuid": characteristic_uuid,
-                            "properties": sorted(properties),
-                        }
-                    )
-                except Exception as exc:  # pragma: no cover - depends on runtime device behavior
-                    errors.append(
-                        {
-                            "characteristic_uuid": characteristic_uuid,
-                            "stage": "start_notify",
-                            "type": exc.__class__.__name__,
-                            "message": str(exc),
-                        }
-                    )
-
-        if active_characteristics:
-            await asyncio.sleep(self._notify_capture_seconds)
-
-        for characteristic in active_characteristics:
-            try:
-                await client.stop_notify(characteristic)
-            except Exception as exc:  # pragma: no cover - depends on runtime device behavior
-                errors.append(
-                    {
-                        "characteristic_uuid": str(getattr(characteristic, "uuid", "unknown")),
-                        "stage": "stop_notify",
-                        "type": exc.__class__.__name__,
-                        "message": str(exc),
-                    }
-                )
-
-        return {
-            "capture_seconds": self._notify_capture_seconds if active_characteristics else 0,
-            "subscribed_characteristics": subscriptions,
-            "packet_count": len(packets),
-            "dropped_packet_count": dropped_packets,
-            "packets": packets,
-            "errors": errors,
-        }
-
-    async def _capture_target_protocol(
-        self,
-        device: Any,
-        matched_payload: dict[str, Any],
-        *,
-        connection_targets: list[tuple[str, Any]] | None = None,
-        max_attempts: int | None = None,
-    ) -> dict[str, Any]:
-        try:
-            from bleak import BleakClient
-        except ImportError as exc:  # pragma: no cover - depends on runtime
-            return {
-                "attempted": False,
-                "target_device": matched_payload,
-                "error_type": exc.__class__.__name__,
-                "error_message": "BleakClient is not installed in this environment.",
-            }
-
-        protocol_capture: dict[str, Any] = {
-            "attempted": True,
-            "target_device": matched_payload,
-            "connect_timeout_seconds": self._connect_timeout_seconds,
-            "connect_retries": self._connect_retries,
-            "connect_retry_pause_seconds": self._connect_retry_pause_seconds,
-            "notify_capture_seconds": self._notify_capture_seconds,
-            "attempts": [],
-        }
-        normalized_address = self._normalize_address(matched_payload.get("address"))
-        if connection_targets is None:
-            connection_targets = [("device", device)]
-            if normalized_address:
-                connection_targets.append(("address", normalized_address))
-
-        attempt_count = max_attempts or self._connect_retries
-
-        for attempt_number in range(1, attempt_count + 1):
-            attempt_payload: dict[str, Any] = {"attempt": attempt_number}
-            for connection_method, connection_target in connection_targets:
-                method_attempt = dict(attempt_payload)
-                method_attempt["connection_method"] = connection_method
-                method_attempt["connection_target"] = (
-                    connection_target
-                    if isinstance(connection_target, str)
-                    else str(getattr(connection_target, "address", connection_target))
-                )
-                try:
-                    try:
-                        client = BleakClient(connection_target, timeout=self._connect_timeout_seconds)
-                    except TypeError:  # pragma: no cover - compatibility fallback
-                        client = BleakClient(connection_target)
-
-                    async with client:
-                        method_attempt["connected"] = bool(getattr(client, "is_connected", False))
-                        try:
-                            services = await client.get_services()
-                        except Exception:  # pragma: no cover - compatibility fallback
-                            services = getattr(client, "services", None)
-                            if services is None:
-                                raise
-
-                        serialized_services = await self._serialize_gatt_services(client, services)
-                        notification_capture = await self._capture_notifications(client, services)
-                        method_attempt["service_count"] = len(serialized_services)
-                        method_attempt["services"] = serialized_services
-                        method_attempt["notification_capture"] = notification_capture
-                        protocol_capture["attempts"].append(method_attempt)
-                        protocol_capture["connected"] = method_attempt["connected"]
-                        protocol_capture["service_count"] = method_attempt["service_count"]
-                        protocol_capture["services"] = serialized_services
-                        protocol_capture["notification_capture"] = notification_capture
-                        protocol_capture["connection_method"] = connection_method
-                        return protocol_capture
-                except Exception as exc:  # pragma: no cover - depends on runtime device behavior
-                    method_attempt["connected"] = False
-                    method_attempt["error_type"] = exc.__class__.__name__
-                    method_attempt["error_message"] = str(exc)
-                    protocol_capture["attempts"].append(method_attempt)
-                    protocol_capture["connected"] = False
-                    protocol_capture["error_type"] = exc.__class__.__name__
-                    protocol_capture["error_message"] = str(exc)
-                    protocol_capture["connection_method"] = connection_method
-            if attempt_number < attempt_count:
-                await asyncio.sleep(self._connect_retry_pause_seconds)
-
-        return protocol_capture
-
-    @staticmethod
-    def _merge_protocol_captures(
-        first: dict[str, Any] | None,
-        second: dict[str, Any] | None,
-    ) -> dict[str, Any] | None:
-        if first is None:
-            return second
-        if second is None:
-            return first
-
-        merged = dict(second if second.get("connected") or not first.get("connected") else first)
-        merged["attempts"] = [
-            *list(first.get("attempts", []) or []),
-            *list(second.get("attempts", []) or []),
-        ]
-        if not merged.get("target_device"):
-            merged["target_device"] = first.get("target_device") or second.get("target_device")
-        return merged
 
     @staticmethod
     def _measurement_from_advertisement_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
@@ -1129,11 +836,6 @@ class LiveBleAdapter(ScaleAdapter):
             reverse=True,
         )[:5]
 
-        protocol_capture: dict[str, Any] | None = {
-            "skipped": True,
-            "reason": "disabled_for_compact_advertisement_scale",
-        }
-
         capture_payload = {
             "captured_at": datetime.now(timezone.utc).isoformat(),
             "profile": profile.name,
@@ -1147,7 +849,6 @@ class LiveBleAdapter(ScaleAdapter):
             "candidate_devices": candidate_devices,
             "advertisement_history": advertisement_history,
             "advertisement_analysis": advertisement_analysis,
-            "protocol_capture": protocol_capture,
             "all_devices": raw_devices,
         }
         capture_path = self._write_capture(capture_payload)
@@ -1175,34 +876,15 @@ class LiveBleAdapter(ScaleAdapter):
                 "parsed_candidate_count", 0
             ),
         }
-        message = (
-            "Live Bluetooth found the target scale, but no final advertisement packet "
-            "arrived before the capture window ended."
-        )
-        if protocol_capture is not None and not protocol_capture.get("skipped"):
-            notification_capture = protocol_capture.get("notification_capture") or {}
-            details["target_connection_status"] = (
-                "connected" if protocol_capture.get("connected") else "failed"
-            )
-            details["target_service_count"] = protocol_capture.get("service_count")
-            details["notification_packet_count"] = notification_capture.get("packet_count", 0)
-            if protocol_capture.get("error_message"):
-                details["target_connection_error"] = str(protocol_capture["error_message"])
-
-            if protocol_capture.get("connected"):
-                message = (
-                    "Target scale discovered and protocol capture saved. "
-                    "Live measurement decoding still needs analysis."
-                )
-            else:
-                message = (
-                    "Target scale was discovered, but the direct BLE connection did not complete. "
-                    "Review the MiniPC capture for GATT details."
-                )
-        elif not matched_targets and self._target_addresses:
+        if not matched_targets and self._target_addresses:
             message = (
                 "The configured target scale was not seen during the live scan window. "
                 "Wake the scale and keep it active while the MiniPC is scanning."
+            )
+        else:
+            message = (
+                "Live Bluetooth found the target scale, but no final advertisement packet "
+                "arrived before the capture window ended."
             )
         raise ScaleAdapterError(message, details=details)
 

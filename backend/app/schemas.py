@@ -79,6 +79,15 @@ class MeasurementUpdateRequest(BaseModel):
     hdl_mmol_l: float | None = Field(default=None, gt=0)
 
 
+class MeasurementSubmitRequest(BaseModel):
+    profile_id: int
+    measured_at: datetime
+    source: str = "ios_bluetooth"
+    weight_kg: float = Field(gt=0)
+    raw_payload_json: dict[str, Any] = Field(default_factory=dict)
+    source_metric_map: dict[str, str] = Field(default_factory=dict)
+
+
 class ChartPoint(BaseModel):
     measured_at: datetime
     value: float
