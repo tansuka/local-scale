@@ -57,7 +57,7 @@ class LlmHealthAnalyzer:
     ) -> None:
         self._prompt = self._load_prompt(prompt_path)
         self._http_client_factory = http_client_factory or (
-            lambda: httpx.Client(timeout=120.0, follow_redirects=True)
+            lambda: httpx.Client(timeout=300.0, follow_redirects=True)
         )
         self._refresh_lock = threading.Lock()
         self._refreshing_profile_ids: set[int] = set()

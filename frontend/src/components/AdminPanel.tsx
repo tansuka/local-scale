@@ -99,12 +99,9 @@ export function AdminPanel({ selectedProfile, onAnalysisUpdated }: AdminPanelPro
     setMessage(null);
     setError(null);
     try {
-      const analysis = await runHealthAnalysis(selectedProfile.id);
-      onAnalysisUpdated(analysis);
+      await runHealthAnalysis(selectedProfile.id);
       setMessage(
-        analysis.status === "ready"
-          ? `Analysis refreshed for ${selectedProfile.name}.`
-          : "Analysis could not be refreshed.",
+        `Analysis for ${selectedProfile.name} is running in the background. The overview will update automatically when it's ready.`,
       );
     } catch (caughtError) {
       setError((caughtError as Error).message);

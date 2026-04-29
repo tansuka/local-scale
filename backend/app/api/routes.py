@@ -56,13 +56,16 @@ def _refresh_health_analysis_in_background(
     analyzer: LlmHealthAnalyzer,
     profile_id: int,
     events: EventBroker,
+    apple_health: dict | None = None,
 ) -> None:
     try:
         with database.make_session() as db:
             profile = get_profile(db, profile_id)
             if profile is None:
                 return
-            analysis = analyzer.resolve_analysis(db, profile, force_refresh=True)
+            analysis = analyzer.resolve_analysis(
+                db, profile, force_refresh=True, apple_health=apple_health,
+            )
             try:
                 asyncio.run(
                     events.broadcast(
@@ -367,9 +370,10 @@ def put_admin_llm_settings(
     return health_analyzer.save_settings(db, payload)
 
 
-@router.post("/admin/profiles/{profile_id}/health-analysis/run", response_model=HealthAnalysisRead)
+@router.post("/admin/profiles/{profile_id}/health-analysis/run", response_model=HealthAnalysisRead, status_code=202)
 def post_run_profile_health_analysis(
     profile_id: int,
+    request: Request,
     payload: HealthAnalysisRunRequest | None = None,
     db: Session = Depends(get_db),
     health_analyzer: LlmHealthAnalyzer = Depends(get_health_analyzer),
@@ -378,8 +382,18 @@ def post_run_profile_health_analysis(
     if profile is None:
         raise HTTPException(status_code=404, detail="Profile not found")
     apple_health = payload.apple_health if payload else None
-    return health_analyzer.resolve_analysis(
-        db, profile, force_refresh=True, apple_health=apple_health,
+    if health_analyzer.mark_refresh_started(profile_id):
+        database: Database = request.app.state.db
+        events_broker: EventBroker = request.app.state.events
+        threading.Thread(
+            target=_refresh_health_analysis_in_background,
+            args=(database, health_analyzer, profile_id, events_broker),
+            kwargs={"apple_health": apple_health},
+            daemon=True,
+        ).start()
+    return HealthAnalysisRead(
+        status="pending",
+        measurement_count=0,
     )
 
 
