@@ -88,6 +88,12 @@ class MeasurementSubmitRequest(BaseModel):
     source_metric_map: dict[str, str] = Field(default_factory=dict)
 
 
+class HealthAnalysisRunRequest(BaseModel):
+    """Optional request body for POST /admin/profiles/{id}/health-analysis/run.
+    Contains ephemeral Apple Health context to enrich the LLM prompt."""
+    apple_health: dict[str, Any] | None = None
+
+
 class ChartPoint(BaseModel):
     measured_at: datetime
     value: float

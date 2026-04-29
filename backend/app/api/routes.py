@@ -27,6 +27,7 @@ from app.schemas import (
     ChartResponse,
     DashboardPayload,
     HealthAnalysisRead,
+    HealthAnalysisRunRequest,
     ImportCommitResponse,
     ImportPreviewResponse,
     LlmSettingsRead,
@@ -369,13 +370,17 @@ def put_admin_llm_settings(
 @router.post("/admin/profiles/{profile_id}/health-analysis/run", response_model=HealthAnalysisRead)
 def post_run_profile_health_analysis(
     profile_id: int,
+    payload: HealthAnalysisRunRequest | None = None,
     db: Session = Depends(get_db),
     health_analyzer: LlmHealthAnalyzer = Depends(get_health_analyzer),
 ) -> HealthAnalysisRead:
     profile = get_profile(db, profile_id)
     if profile is None:
         raise HTTPException(status_code=404, detail="Profile not found")
-    return health_analyzer.resolve_analysis(db, profile, force_refresh=True)
+    apple_health = payload.apple_health if payload else None
+    return health_analyzer.resolve_analysis(
+        db, profile, force_refresh=True, apple_health=apple_health,
+    )
 
 
 @router.post("/sessions/start", response_model=WeighSessionRead, status_code=202)

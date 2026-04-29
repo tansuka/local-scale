@@ -95,6 +95,7 @@ class LlmHealthAnalyzer:
         profile: Profile,
         *,
         force_refresh: bool = False,
+        apple_health: dict[str, Any] | None = None,
     ) -> HealthAnalysisRead:
         snapshot = self.analysis_snapshot(db, profile)
         if (
@@ -125,6 +126,7 @@ class LlmHealthAnalyzer:
                 profile=profile,
                 measurements=list(reversed(measurements_desc)),
                 app_settings=app_settings,
+                apple_health=apple_health,
             )
         except Exception as exc:  # pragma: no cover - exercised via tests with concrete errors
             return self._cached_or_error(
@@ -366,11 +368,14 @@ class LlmHealthAnalyzer:
         profile: Profile,
         measurements: list[Measurement],
         app_settings: AppSettings,
+        apple_health: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if self._prompt.text is None:
             raise RuntimeError("Prompt is not loaded.")
 
-        request_payload = self._build_request_payload(profile=profile, measurements=measurements)
+        request_payload = self._build_request_payload(
+            profile=profile, measurements=measurements, apple_health=apple_health,
+        )
         completion_text = self._request_completion(
             prompt=self._prompt.text,
             request_payload=request_payload,
@@ -383,11 +388,12 @@ class LlmHealthAnalyzer:
         *,
         profile: Profile,
         measurements: list[Measurement],
+        apple_health: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         latest = measurements[-1]
         oldest = measurements[0]
         age_years = age_on(profile.birth_date, latest.measured_at.date())
-        return {
+        payload = {
             "profile": {
                 "id": profile.id,
                 "name": profile.name,
@@ -400,6 +406,9 @@ class LlmHealthAnalyzer:
             "trend_deltas": self._measurement_deltas(oldest, latest),
             "measurements": [self._measurement_payload(measurement) for measurement in measurements],
         }
+        if apple_health is not None:
+            payload["apple_health"] = apple_health
+        return payload
 
     def _measurement_payload(self, measurement: Measurement) -> dict[str, Any]:
         payload = {
