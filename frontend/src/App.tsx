@@ -231,6 +231,12 @@ export function App() {
           setError(caughtError.message),
         );
       }
+      if (
+        payload.type === "health_analysis.updated" &&
+        payload.profile_id === selectedProfileId
+      ) {
+        setHealthAnalysis(payload.health_analysis);
+      }
     };
 
     return () => {

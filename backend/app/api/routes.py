@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 import threading
 
@@ -53,13 +54,26 @@ def _refresh_health_analysis_in_background(
     database: Database,
     analyzer: LlmHealthAnalyzer,
     profile_id: int,
+    events: EventBroker,
 ) -> None:
     try:
         with database.make_session() as db:
             profile = get_profile(db, profile_id)
             if profile is None:
                 return
-            analyzer.resolve_analysis(db, profile, force_refresh=True)
+            analysis = analyzer.resolve_analysis(db, profile, force_refresh=True)
+            try:
+                asyncio.run(
+                    events.broadcast(
+                        {
+                            "type": "health_analysis.updated",
+                            "profile_id": profile_id,
+                            "health_analysis": analysis.model_dump(mode="json"),
+                        }
+                    )
+                )
+            except Exception:
+                pass  # Best-effort: analysis is saved even if broadcast fails
     finally:
         analyzer.mark_refresh_finished(profile_id)
 
@@ -320,9 +334,10 @@ def get_dashboard(
             health_analysis = analysis_snapshot.analysis
             if analysis_snapshot.should_refresh and health_analyzer.mark_refresh_started(profile.id):
                 database: Database = request.app.state.db
+                events_broker: EventBroker = request.app.state.events
                 threading.Thread(
                     target=_refresh_health_analysis_in_background,
-                    args=(database, health_analyzer, profile.id),
+                    args=(database, health_analyzer, profile.id, events_broker),
                     daemon=True,
                 ).start()
     return DashboardPayload(

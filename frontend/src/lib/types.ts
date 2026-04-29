@@ -126,4 +126,5 @@ export type ImportCommitResponse = {
 
 export type LiveEvent =
   | { type: "session.updated"; session: WeighSession; details?: Record<string, unknown> }
-  | { type: "measurement.created"; measurement: Measurement };
+  | { type: "measurement.created"; measurement: Measurement }
+  | { type: "health_analysis.updated"; profile_id: number; health_analysis: HealthAnalysis };
