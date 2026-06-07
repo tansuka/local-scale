@@ -198,3 +198,8 @@ class LlmSettingsUpdateRequest(BaseModel):
     model: str = ""
     api_key: str | None = None
     clear_api_key: bool = False
+
+
+class AppleHealthSyncRequest(BaseModel):
+    profile_id: int
+    snapshot: dict[str, Any]  # Full AppleHealthSnapshot JSON — flexible schema

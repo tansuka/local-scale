@@ -71,7 +71,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             }
         )
 
-    @app.get("/{full_path:path}", response_model=None)
+    @app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"], response_model=None, include_in_schema=False)
     def spa_fallback(full_path: str, request: Request):
         if full_path.startswith("api"):
             return JSONResponse({"detail": "Not found"}, status_code=404)

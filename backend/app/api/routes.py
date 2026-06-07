@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_events, get_health_analyzer, get_session_manager
 from app.db import Database
-from app.models import Measurement
+from app.models import AppleHealthSnapshot, Measurement
 from app.repositories.measurements import (
     add_measurement,
     chart_series,
@@ -23,6 +23,7 @@ from app.repositories.measurements import (
 )
 from app.repositories.profiles import create_profile, get_profile, list_profiles, update_profile
 from app.schemas import (
+    AppleHealthSyncRequest,
     ChartPoint,
     ChartResponse,
     DashboardPayload,
@@ -450,6 +451,71 @@ async def post_import_commit(
         skipped=batch.rows_skipped,
         errors=errors,
     )
+
+
+# ── Apple Health Full Sync ─────────────────────────────────────────
+
+
+@router.post("/apple-health/sync", status_code=201)
+def post_apple_health_sync(
+    payload: AppleHealthSyncRequest,
+    db: Session = Depends(get_db),
+) -> dict:
+    profile = get_profile(db, payload.profile_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    from datetime import datetime, timezone
+
+    def _parse_dt(raw, fallback: datetime) -> datetime:
+        if isinstance(raw, str):
+            try:
+                return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            except ValueError:
+                return fallback
+        return fallback
+
+    now = datetime.now(timezone.utc)
+    captured_at = _parse_dt(payload.snapshot.get("captured_at"), now)
+    period_start = _parse_dt(payload.snapshot.get("period_start"), now)
+    period_end = _parse_dt(payload.snapshot.get("period_end"), now)
+
+    snapshot = AppleHealthSnapshot(
+        profile_id=payload.profile_id,
+        captured_at=captured_at,
+        period_start=period_start,
+        period_end=period_end,
+        payload_json=payload.snapshot,
+    )
+    db.add(snapshot)
+    db.commit()
+    db.refresh(snapshot)
+    return {"status": "ok", "id": snapshot.id}
+
+
+@router.get("/apple-health/snapshots")
+def get_apple_health_snapshots(
+    profile_id: int,
+    limit: int = Query(default=30, le=365),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    rows = (
+        db.query(AppleHealthSnapshot)
+        .filter_by(profile_id=profile_id)
+        .order_by(AppleHealthSnapshot.captured_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "captured_at": r.captured_at,
+            "period_start": r.period_start,
+            "period_end": r.period_end,
+            "payload": r.payload_json,
+        }
+        for r in rows
+    ]
 
 
 @router.websocket("/ws/live")

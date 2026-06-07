@@ -153,3 +153,15 @@ class ProfileHealthAnalysis(Base):
     error_message: Mapped[str | None] = mapped_column(Text)
 
     profile: Mapped[Profile] = relationship(back_populates="health_analysis")
+
+
+class AppleHealthSnapshot(Base):
+    __tablename__ = "apple_health_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("profiles.id"), nullable=False, index=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
