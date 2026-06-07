@@ -93,3 +93,4 @@ iPhone shortcut
 - **Body fat %**: stored as a ratio (0.165) in Apple Health, returned as a percentage (16.5%) by the tools.
 - **Body metrics vs scale data**: `get_body_metrics` returns Apple Health readings. For BIA body composition from the scale, use the FastAPI measurement endpoints instead.
 - **Freshness**: use `get_snapshots_list` first to check `captured_at` before calling heavier tools.
+- **No authentication**: the MCP server has no auth layer — it is designed for trusted LAN access only. Do not expose it to the public internet without adding authentication (e.g. a reverse proxy with mTLS or an API key middleware).

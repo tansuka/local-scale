@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 from pathlib import Path
 import threading
 
@@ -10,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_events, get_health_analyzer, get_session_manager
 from app.db import Database
-from app.models import Measurement
+from app.models import AppleHealthSnapshot, Measurement
 from app.repositories.apple_health import get_latest_snapshot as get_latest_apple_health_snapshot, list_snapshot_metadata
 from app.repositories.measurements import (
     add_measurement,
@@ -462,8 +463,6 @@ def post_apple_health_sync(
     payload: AppleHealthSyncRequest,
     db: Session = Depends(get_db),
 ) -> dict:
-    from datetime import datetime, timezone
-    from app.models import AppleHealthSnapshot
 
     profile = get_profile(db, payload.profile_id)
     if profile is None:
@@ -481,6 +480,15 @@ def post_apple_health_sync(
     captured_at = _parse_dt(payload.snapshot.get("captured_at"), now)
     period_start = _parse_dt(payload.snapshot.get("period_start"), now)
     period_end = _parse_dt(payload.snapshot.get("period_end"), now)
+
+    # Deduplicate: reject if a snapshot with the same captured_at already exists
+    existing = (
+        db.query(AppleHealthSnapshot)
+        .filter_by(profile_id=payload.profile_id, captured_at=captured_at)
+        .first()
+    )
+    if existing is not None:
+        return {"status": "duplicate", "id": existing.id}
 
     snapshot = AppleHealthSnapshot(
         profile_id=payload.profile_id,
@@ -502,7 +510,6 @@ def get_apple_health_snapshots(
     db: Session = Depends(get_db),
 ) -> list[dict]:
     """Return metadata + full payload for stored Apple Health snapshots."""
-    from app.models import AppleHealthSnapshot
 
     rows = (
         db.query(AppleHealthSnapshot)

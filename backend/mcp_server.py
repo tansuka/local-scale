@@ -82,11 +82,15 @@ def _sample_value(samples: dict, hk_key: str) -> float | None:
 
 def _avg_daily(daily_summaries: list[dict], hk_key: str) -> float | None:
     """Average a metric across all days in daily_summaries."""
-    values = [
-        float(d["metrics"][hk_key])
-        for d in daily_summaries
-        if hk_key in d.get("metrics", {}) and d["metrics"][hk_key] is not None
-    ]
+    values: list[float] = []
+    for d in daily_summaries:
+        raw = d.get("metrics", {}).get(hk_key)
+        if raw is None:
+            continue
+        try:
+            values.append(float(raw))
+        except (ValueError, TypeError):
+            continue
     if not values:
         return None
     return round(sum(values) / len(values), 2)
