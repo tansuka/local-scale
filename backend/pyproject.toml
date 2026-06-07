@@ -16,6 +16,7 @@ dependencies = [
   "sqlalchemy>=2.0.31",
   "uvicorn>=0.30.6",
   "websockets>=12.0",
+  "mcp>=1.0",
 ]
 
 [project.optional-dependencies]

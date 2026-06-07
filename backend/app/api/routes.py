@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_events, get_health_analyzer, get_session_manager
 from app.db import Database
-from app.models import AppleHealthSnapshot, Measurement
+from app.models import Measurement
+from app.repositories.apple_health import get_latest_snapshot as get_latest_apple_health_snapshot, list_snapshot_metadata
 from app.repositories.measurements import (
     add_measurement,
     chart_series,
@@ -461,11 +462,12 @@ def post_apple_health_sync(
     payload: AppleHealthSyncRequest,
     db: Session = Depends(get_db),
 ) -> dict:
+    from datetime import datetime, timezone
+    from app.models import AppleHealthSnapshot
+
     profile = get_profile(db, payload.profile_id)
     if profile is None:
         raise HTTPException(status_code=404, detail="Profile not found")
-
-    from datetime import datetime, timezone
 
     def _parse_dt(raw, fallback: datetime) -> datetime:
         if isinstance(raw, str):
@@ -499,6 +501,9 @@ def get_apple_health_snapshots(
     limit: int = Query(default=30, le=365),
     db: Session = Depends(get_db),
 ) -> list[dict]:
+    """Return metadata + full payload for stored Apple Health snapshots."""
+    from app.models import AppleHealthSnapshot
+
     rows = (
         db.query(AppleHealthSnapshot)
         .filter_by(profile_id=profile_id)
