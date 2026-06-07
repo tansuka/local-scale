@@ -89,8 +89,10 @@ iPhone shortcut
 
 ## Notes
 
-- **Sleep data**: `get_sleep` returns a note if `HKCategoryTypeIdentifierSleepAnalysis` is absent from the snapshot. Add it to your iOS shortcut to enable sleep tracking.
+- **Compact output**: Null/empty values are stripped from responses and JSON is minified to minimize token usage for LLM agents.
+- **Date semantics**: `synced_at` = when data was sent from iPhone. Each metric has its own `measured_at` = actual reading time. Daily metrics (activity, nutrition) are period averages.
+- **Sleep data**: `get_sleep` returns `"no_data"` if `HKCategoryTypeIdentifierSleepAnalysis` is absent. Sleep is aggregated by stage (minutes per stage), not individual sessions.
 - **Body fat %**: stored as a ratio (0.165) in Apple Health, returned as a percentage (16.5%) by the tools.
 - **Body metrics vs scale data**: `get_body_metrics` returns Apple Health readings. For BIA body composition from the scale, use the FastAPI measurement endpoints instead.
-- **Freshness**: use `get_snapshots_list` first to check `captured_at` before calling heavier tools.
-- **No authentication**: the MCP server has no auth layer — it is designed for trusted LAN access only. Do not expose it to the public internet without adding authentication (e.g. a reverse proxy with mTLS or an API key middleware).
+- **Freshness**: use `get_snapshots_list` first to check `synced_at` before calling heavier tools.
+- **No authentication**: the MCP server has no auth layer — it is designed for trusted LAN access only.

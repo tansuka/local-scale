@@ -64,11 +64,6 @@ server = Server("local-scale-health")
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────
 
-def _data_age_hours(captured_at: datetime) -> float:
-    now = datetime.now(timezone.utc)
-    if captured_at.tzinfo is None:
-        captured_at = captured_at.replace(tzinfo=timezone.utc)
-    return round((now - captured_at).total_seconds() / 3600, 1)
 
 
 def _sample_value(samples: dict, hk_key: str) -> float | None:
@@ -78,6 +73,31 @@ def _sample_value(samples: dict, hk_key: str) -> float | None:
         val = entry.get("value")
         return float(val) if val is not None else None
     return None
+
+
+def _sample_date(samples: dict, hk_key: str) -> str | None:
+    """Extract the actual measurement date from a latest_samples entry.
+
+    Apple Health entries may have 'date', 'start_date', or 'end_date'.
+    'date' or 'start_date' represents when the measurement was actually taken,
+    which is distinct from the snapshot's 'captured_at' (the sync timestamp).
+    """
+    entry = samples.get(hk_key)
+    if entry and isinstance(entry, dict):
+        return entry.get("date") or entry.get("start_date") or None
+    return None
+
+
+def _sample_with_date(samples: dict, hk_key: str) -> dict | None:
+    """Return {value, measured_at} for a latest_samples entry, or None if absent."""
+    val = _sample_value(samples, hk_key)
+    if val is None:
+        return None
+    dt = _sample_date(samples, hk_key)
+    result: dict = {"value": val}
+    if dt:
+        result["measured_at"] = dt
+    return result
 
 
 def _avg_daily(daily_summaries: list[dict], hk_key: str) -> float | None:
@@ -96,8 +116,17 @@ def _avg_daily(daily_summaries: list[dict], hk_key: str) -> float | None:
     return round(sum(values) / len(values), 2)
 
 
+def _compact(obj: Any) -> Any:
+    """Recursively strip None values and empty dicts/lists to minimize tokens."""
+    if isinstance(obj, dict):
+        return {k: _compact(v) for k, v in obj.items() if v is not None and v != {} and v != []}
+    if isinstance(obj, list):
+        return [_compact(item) for item in obj]
+    return obj
+
+
 def _ok(data: dict) -> list[types.TextContent]:
-    return [types.TextContent(type="text", text=json.dumps(data, default=str))]
+    return [types.TextContent(type="text", text=json.dumps(_compact(data), default=str, separators=(',', ':')))]
 
 
 def _no_snapshot(profile_id: int) -> list[types.TextContent]:
@@ -107,10 +136,8 @@ def _no_snapshot(profile_id: int) -> list[types.TextContent]:
 def _snapshot_meta(snapshot: Any) -> dict:
     return {
         "profile_id": snapshot.profile_id,
-        "captured_at": snapshot.captured_at.isoformat(),
-        "period_start": snapshot.period_start.isoformat(),
-        "period_end": snapshot.period_end.isoformat(),
-        "data_age_hours": _data_age_hours(snapshot.captured_at),
+        "synced_at": snapshot.captured_at.isoformat(),
+        "period": f"{snapshot.period_start.isoformat()}/{snapshot.period_end.isoformat()}",
     }
 
 
@@ -119,18 +146,17 @@ def _snapshot_meta(snapshot: Any) -> dict:
 def _extract_activity(payload: dict) -> dict:
     daily = payload.get("daily_summaries", [])
     return {
-        "days_in_period": len(daily),
-        "steps_avg": _avg_daily(daily, "HKQuantityTypeIdentifierStepCount"),
-        "active_energy_kcal_avg": _avg_daily(daily, "HKQuantityTypeIdentifierActiveEnergyBurned"),
-        "basal_energy_kcal_avg": _avg_daily(daily, "HKQuantityTypeIdentifierBasalEnergyBurned"),
-        "exercise_minutes_avg": _avg_daily(daily, "HKQuantityTypeIdentifierAppleExerciseTime"),
-        "distance_walking_m_avg": _avg_daily(daily, "HKQuantityTypeIdentifierDistanceWalkingRunning"),
-        "distance_cycling_m_avg": _avg_daily(daily, "HKQuantityTypeIdentifierDistanceCycling"),
-        "distance_swimming_m_avg": _avg_daily(daily, "HKQuantityTypeIdentifierDistanceSwimming"),
-        "flights_climbed_avg": _avg_daily(daily, "HKQuantityTypeIdentifierFlightsClimbed"),
-        "stand_minutes_avg": _avg_daily(daily, "HKQuantityTypeIdentifierAppleStandTime"),
-        "move_minutes_avg": _avg_daily(daily, "HKQuantityTypeIdentifierAppleMoveTime"),
-        "time_in_daylight_min_avg": _avg_daily(daily, "HKQuantityTypeIdentifierTimeInDaylight"),
+        "steps": _avg_daily(daily, "HKQuantityTypeIdentifierStepCount"),
+        "active_energy_kcal": _avg_daily(daily, "HKQuantityTypeIdentifierActiveEnergyBurned"),
+        "basal_energy_kcal": _avg_daily(daily, "HKQuantityTypeIdentifierBasalEnergyBurned"),
+        "exercise_min": _avg_daily(daily, "HKQuantityTypeIdentifierAppleExerciseTime"),
+        "walk_run_m": _avg_daily(daily, "HKQuantityTypeIdentifierDistanceWalkingRunning"),
+        "cycling_m": _avg_daily(daily, "HKQuantityTypeIdentifierDistanceCycling"),
+        "swimming_m": _avg_daily(daily, "HKQuantityTypeIdentifierDistanceSwimming"),
+        "flights": _avg_daily(daily, "HKQuantityTypeIdentifierFlightsClimbed"),
+        "stand_min": _avg_daily(daily, "HKQuantityTypeIdentifierAppleStandTime"),
+        "move_min": _avg_daily(daily, "HKQuantityTypeIdentifierAppleMoveTime"),
+        "daylight_min": _avg_daily(daily, "HKQuantityTypeIdentifierTimeInDaylight"),
     }
 
 
@@ -138,8 +164,9 @@ def _extract_heart(payload: dict) -> dict:
     samples = payload.get("latest_samples", {})
 
     # O2 saturation is stored as a ratio (0.98), convert to percentage
-    o2_raw = _sample_value(samples, "HKQuantityTypeIdentifierOxygenSaturation")
-    o2_pct = round(o2_raw * 100, 1) if o2_raw is not None else None
+    o2_entry = _sample_with_date(samples, "HKQuantityTypeIdentifierOxygenSaturation")
+    if o2_entry is not None:
+        o2_entry["value"] = round(o2_entry["value"] * 100, 1)
 
     # Latest ECG summary
     ecg_readings = payload.get("ecg_readings", [])
@@ -149,19 +176,19 @@ def _extract_heart(payload: dict) -> dict:
         latest_ecg = {
             "classification": ecg.get("classification"),
             "avg_hr_bpm": ecg.get("average_heart_rate"),
-            "date": ecg.get("start_date"),
+            "measured_at": ecg.get("start_date") or ecg.get("date"),
         }
 
     return {
-        "resting_hr_bpm": _sample_value(samples, "HKQuantityTypeIdentifierRestingHeartRate"),
-        "hrv_sdnn_ms": _sample_value(samples, "HKQuantityTypeIdentifierHeartRateVariabilitySDNN"),
-        "walking_hr_avg_bpm": _sample_value(samples, "HKQuantityTypeIdentifierWalkingHeartRateAverage"),
-        "hr_recovery_1min_bpm": _sample_value(samples, "HKQuantityTypeIdentifierHeartRateRecoveryOneMinute"),
-        "vo2_max_ml_kg_min": _sample_value(samples, "HKQuantityTypeIdentifierVo2Max"),
-        "oxygen_saturation_pct": o2_pct,
-        "blood_pressure_systolic_mmhg": _sample_value(samples, "HKQuantityTypeIdentifierBloodPressureSystolic"),
-        "blood_pressure_diastolic_mmhg": _sample_value(samples, "HKQuantityTypeIdentifierBloodPressureDiastolic"),
-        "afib_burden_pct": _sample_value(samples, "HKQuantityTypeIdentifierAtrialFibrillationBurden"),
+        "resting_hr": _sample_with_date(samples, "HKQuantityTypeIdentifierRestingHeartRate"),
+        "hrv_sdnn": _sample_with_date(samples, "HKQuantityTypeIdentifierHeartRateVariabilitySDNN"),
+        "walking_hr_avg": _sample_with_date(samples, "HKQuantityTypeIdentifierWalkingHeartRateAverage"),
+        "hr_recovery_1min": _sample_with_date(samples, "HKQuantityTypeIdentifierHeartRateRecoveryOneMinute"),
+        "vo2_max": _sample_with_date(samples, "HKQuantityTypeIdentifierVo2Max"),
+        "oxygen_saturation_pct": o2_entry,
+        "blood_pressure_systolic": _sample_with_date(samples, "HKQuantityTypeIdentifierBloodPressureSystolic"),
+        "blood_pressure_diastolic": _sample_with_date(samples, "HKQuantityTypeIdentifierBloodPressureDiastolic"),
+        "afib_burden_pct": _sample_with_date(samples, "HKQuantityTypeIdentifierAtrialFibrillationBurden"),
         "latest_ecg": latest_ecg,
     }
 
@@ -170,7 +197,6 @@ def _extract_sleep(payload: dict) -> dict | None:
     """
     Extracts sleep data from recent_events.HKCategoryTypeIdentifierSleepAnalysis.
     Returns None if sleep data is not present in the snapshot.
-    Sleep stage descriptions: asleep, asleepCore, asleepDeep, asleepREM, awake, inBed.
     """
     events = payload.get("recent_events", {})
     sleep_events = events.get("HKCategoryTypeIdentifierSleepAnalysis", [])
@@ -178,8 +204,8 @@ def _extract_sleep(payload: dict) -> dict | None:
         return None
 
     asleep_stages = {"asleep", "asleepCore", "asleepDeep", "asleepREM"}
+    stage_minutes: dict[str, float] = {}
     total_asleep_min = 0.0
-    sessions: list[dict] = []
 
     for e in sleep_events:
         start = e.get("start_date")
@@ -193,68 +219,61 @@ def _extract_sleep(payload: dict) -> dict | None:
                 duration_min = (en - s).total_seconds() / 60
             except Exception:
                 pass
+        stage_minutes[desc] = round(stage_minutes.get(desc, 0) + duration_min, 1)
         if desc in asleep_stages:
             total_asleep_min += duration_min
-        sessions.append({
-            "stage": desc,
-            "start": start,
-            "end": end,
-            "duration_minutes": round(duration_min, 1),
-        })
 
     total_hours = round(total_asleep_min / 60, 2)
     return {
-        "total_sleep_hours": total_hours,
+        "total_hours": total_hours,
         "below_7h": total_hours < 7.0,
-        "sessions": sessions,
+        "stages_min": stage_minutes,
     }
 
 
 def _extract_nutrition(payload: dict) -> dict:
     daily = payload.get("daily_summaries", [])
     return {
-        "days_in_period": len(daily),
-        "calories_kcal_avg": _avg_daily(daily, "HKQuantityTypeIdentifierDietaryEnergyConsumed"),
-        "water_L_avg": _avg_daily(daily, "HKQuantityTypeIdentifierDietaryWater"),
-        "protein_g_avg": _avg_daily(daily, "HKQuantityTypeIdentifierDietaryProtein"),
-        "carbs_g_avg": _avg_daily(daily, "HKQuantityTypeIdentifierDietaryCarbohydrates"),
-        "fat_total_g_avg": _avg_daily(daily, "HKQuantityTypeIdentifierDietaryFatTotal"),
-        "fat_saturated_g_avg": _avg_daily(daily, "HKQuantityTypeIdentifierDietaryFatSaturated"),
-        "fat_monounsaturated_g_avg": _avg_daily(daily, "HKQuantityTypeIdentifierDietaryFatMonounsaturated"),
-        "fat_polyunsaturated_g_avg": _avg_daily(daily, "HKQuantityTypeIdentifierDietaryFatPolyunsaturated"),
-        "fiber_g_avg": _avg_daily(daily, "HKQuantityTypeIdentifierDietaryFiber"),
-        "sugar_g_avg": _avg_daily(daily, "HKQuantityTypeIdentifierDietarySugar"),
-        "sodium_g_avg": _avg_daily(daily, "HKQuantityTypeIdentifierDietarySodium"),
-        "caffeine_g_avg": _avg_daily(daily, "HKQuantityTypeIdentifierDietaryCaffeine"),
-        "alcohol_drinks_avg": _avg_daily(daily, "HKQuantityTypeIdentifierNumberOfAlcoholicBeverages"),
-        "cholesterol_g_avg": _avg_daily(daily, "HKQuantityTypeIdentifierDietaryCholesterol"),
+        "calories_kcal": _avg_daily(daily, "HKQuantityTypeIdentifierDietaryEnergyConsumed"),
+        "water_L": _avg_daily(daily, "HKQuantityTypeIdentifierDietaryWater"),
+        "protein_g": _avg_daily(daily, "HKQuantityTypeIdentifierDietaryProtein"),
+        "carbs_g": _avg_daily(daily, "HKQuantityTypeIdentifierDietaryCarbohydrates"),
+        "fat_g": _avg_daily(daily, "HKQuantityTypeIdentifierDietaryFatTotal"),
+        "sat_fat_g": _avg_daily(daily, "HKQuantityTypeIdentifierDietaryFatSaturated"),
+        "fiber_g": _avg_daily(daily, "HKQuantityTypeIdentifierDietaryFiber"),
+        "sugar_g": _avg_daily(daily, "HKQuantityTypeIdentifierDietarySugar"),
+        "sodium_g": _avg_daily(daily, "HKQuantityTypeIdentifierDietarySodium"),
+        "caffeine_g": _avg_daily(daily, "HKQuantityTypeIdentifierDietaryCaffeine"),
+        "alcohol_drinks": _avg_daily(daily, "HKQuantityTypeIdentifierNumberOfAlcoholicBeverages"),
+        "cholesterol_g": _avg_daily(daily, "HKQuantityTypeIdentifierDietaryCholesterol"),
     }
 
 
 def _extract_vitals(payload: dict) -> dict:
     samples = payload.get("latest_samples", {})
     return {
-        "body_temp_c": _sample_value(samples, "HKQuantityTypeIdentifierBodyTemperature"),
-        "wrist_temp_c": _sample_value(samples, "HKQuantityTypeIdentifierAppleSleepingWristTemperature"),
-        "basal_body_temp_c": _sample_value(samples, "HKQuantityTypeIdentifierBasalBodyTemperature"),
-        "respiratory_rate_breaths_min": _sample_value(samples, "HKQuantityTypeIdentifierRespiratoryRate"),
-        "blood_glucose_mg_dl": _sample_value(samples, "HKQuantityTypeIdentifierBloodGlucose"),
-        "blood_alcohol_pct": _sample_value(samples, "HKQuantityTypeIdentifierBloodAlcoholContent"),
+        "body_temp_c": _sample_with_date(samples, "HKQuantityTypeIdentifierBodyTemperature"),
+        "wrist_temp_c": _sample_with_date(samples, "HKQuantityTypeIdentifierAppleSleepingWristTemperature"),
+        "basal_body_temp_c": _sample_with_date(samples, "HKQuantityTypeIdentifierBasalBodyTemperature"),
+        "respiratory_rate": _sample_with_date(samples, "HKQuantityTypeIdentifierRespiratoryRate"),
+        "blood_glucose": _sample_with_date(samples, "HKQuantityTypeIdentifierBloodGlucose"),
+        "blood_alcohol_pct": _sample_with_date(samples, "HKQuantityTypeIdentifierBloodAlcoholContent"),
     }
 
 
 def _extract_body_metrics(payload: dict) -> dict:
     samples = payload.get("latest_samples", {})
     # Body fat is stored as a ratio (0.165 = 16.5%) — convert to percentage
-    fat_raw = _sample_value(samples, "HKQuantityTypeIdentifierBodyFatPercentage")
-    fat_pct = round(fat_raw * 100, 1) if fat_raw is not None else None
+    fat_entry = _sample_with_date(samples, "HKQuantityTypeIdentifierBodyFatPercentage")
+    if fat_entry is not None:
+        fat_entry["value"] = round(fat_entry["value"] * 100, 1)
     return {
-        "weight_kg": _sample_value(samples, "HKQuantityTypeIdentifierBodyMass"),
-        "body_fat_pct": fat_pct,
-        "bmi": _sample_value(samples, "HKQuantityTypeIdentifierBodyMassIndex"),
-        "lean_mass_kg": _sample_value(samples, "HKQuantityTypeIdentifierLeanBodyMass"),
-        "waist_cm": _sample_value(samples, "HKQuantityTypeIdentifierWaistCircumference"),
-        "height_m": _sample_value(samples, "HKQuantityTypeIdentifierHeight"),
+        "weight_kg": _sample_with_date(samples, "HKQuantityTypeIdentifierBodyMass"),
+        "body_fat_pct": fat_entry,
+        "bmi": _sample_with_date(samples, "HKQuantityTypeIdentifierBodyMassIndex"),
+        "lean_mass_kg": _sample_with_date(samples, "HKQuantityTypeIdentifierLeanBodyMass"),
+        "waist_cm": _sample_with_date(samples, "HKQuantityTypeIdentifierWaistCircumference"),
+        "height_m": _sample_with_date(samples, "HKQuantityTypeIdentifierHeight"),
     }
 
 
@@ -263,10 +282,9 @@ def _extract_workouts(payload: dict) -> list[dict]:
         {
             "type": w.get("type"),
             "start": w.get("start_date"),
-            "end": w.get("end_date"),
-            "duration_minutes": w.get("duration_minutes"),
-            "energy_kcal": w.get("energy_burned_kcal"),
-            "distance_m": w.get("distance_meters"),
+            "dur_min": w.get("duration_minutes"),
+            "kcal": w.get("energy_burned_kcal"),
+            "dist_m": w.get("distance_meters"),
         }
         for w in payload.get("workouts", [])
     ]
@@ -342,99 +360,65 @@ TOOLS: list[types.Tool] = [
     types.Tool(
         name="get_apple_health_context",
         description=(
-            "Returns a complete LLM-ready overview of the latest Apple Health snapshot for a profile. "
-            "Includes activity, heart, sleep, nutrition, vitals, body metrics, workouts, and active symptoms. "
-            "Use this for initial health context injection into your reasoning."
+            "Full Apple Health overview: activity, heart, sleep, nutrition, vitals, body metrics, workouts, symptoms. "
+            "'synced_at' = when data was sent from iPhone. Each metric has its own 'measured_at' = actual reading time. "
+            "Null metrics are omitted. Daily metrics are period averages."
         ),
         inputSchema=_PROFILE_ID_SCHEMA,
     ),
     types.Tool(
         name="get_activity",
-        description=(
-            "Returns daily activity metrics averaged across the snapshot period: "
-            "steps, active & basal energy, exercise minutes, walking/cycling/swimming distance, "
-            "flights climbed, stand time, move time, time in daylight."
-        ),
+        description="Daily activity averages: steps, energy, exercise, distance, flights, stand/move time, daylight.",
         inputSchema=_PROFILE_ID_SCHEMA,
     ),
     types.Tool(
         name="get_heart",
-        description=(
-            "Returns heart health data from the latest Apple Health snapshot: "
-            "resting HR, HRV (SDNN), walking HR average, 1-min HR recovery, VO2 max, "
-            "oxygen saturation, blood pressure, AFib burden, and latest ECG classification."
-        ),
+        description="Heart: resting HR, HRV, walking HR, recovery, VO2max, O2 sat, BP, AFib, ECG. Each has measured_at.",
         inputSchema=_PROFILE_ID_SCHEMA,
     ),
     types.Tool(
         name="get_sleep",
-        description=(
-            "Returns sleep data from the latest Apple Health snapshot: "
-            "total sleep hours, stage breakdown (core/deep/REM/awake), and whether the user slept under 7 hours. "
-            "Returns a note if the snapshot does not include sleep data yet."
-        ),
+        description="Sleep: total hours, below-7h flag, minutes per stage (core/deep/REM/awake/inBed).",
         inputSchema=_PROFILE_ID_SCHEMA,
     ),
     types.Tool(
         name="get_nutrition",
-        description=(
-            "Returns dietary intake averaged across the snapshot period: "
-            "calories, water, protein, carbs, all fat types, fiber, sugar, sodium, caffeine, and alcohol drinks."
-        ),
+        description="Nutrition averages: calories, water, protein, carbs, fat, fiber, sugar, sodium, caffeine, alcohol.",
         inputSchema=_PROFILE_ID_SCHEMA,
     ),
     types.Tool(
         name="get_vitals",
-        description=(
-            "Returns vital sign readings from the latest Apple Health snapshot: "
-            "body temperature, wrist temperature, respiratory rate, blood glucose, blood alcohol."
-        ),
+        description="Vitals: body/wrist temp, respiratory rate, blood glucose, blood alcohol. Each has measured_at.",
         inputSchema=_PROFILE_ID_SCHEMA,
     ),
     types.Tool(
         name="get_body_metrics",
-        description=(
-            "Returns body composition metrics recorded in Apple Health: "
-            "weight, body fat %, BMI, lean mass, waist circumference, height. "
-            "Note: these are Apple Health readings — for scale BIA body composition use the scale measurement tools."
-        ),
+        description="Body: weight, fat%, BMI, lean mass, waist, height from Apple Health (not scale BIA). Each has measured_at.",
         inputSchema=_PROFILE_ID_SCHEMA,
     ),
     types.Tool(
         name="get_workouts",
-        description=(
-            "Returns the list of workout sessions recorded in the latest Apple Health snapshot: "
-            "type, start/end time, duration, calories burned, and distance."
-        ),
+        description="Workout sessions: type, start, duration, calories, distance.",
         inputSchema=_PROFILE_ID_SCHEMA,
     ),
     types.Tool(
         name="get_symptoms",
-        description=(
-            "Returns active or recently recorded symptoms from Apple Health "
-            "(e.g. fatigue, headache, chest pain, nausea) with severity level and time window. "
-            "Returns an empty list if no symptoms are present. "
-            "notPresent entries are filtered out automatically."
-        ),
+        description="Active symptoms with severity and time window. Empty if none.",
         inputSchema=_PROFILE_ID_SCHEMA,
     ),
     types.Tool(
         name="get_snapshots_list",
-        description=(
-            "Returns a lightweight list of available Apple Health snapshots for a profile "
-            "(id, captured_at, period_start, period_end) without loading payload data. "
-            "Useful for checking data freshness before calling a heavier tool."
-        ),
+        description="List available snapshots (id, synced_at, period). Check freshness before heavier calls.",
         inputSchema={
             "type": "object",
             "properties": {
                 "profile_id": {
                     "type": "integer",
-                    "description": "The local-scale profile ID.",
+                    "description": "Profile ID.",
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Maximum number of snapshots to return (default 10, max 90).",
+                    "description": "Max snapshots (default 10, max 90).",
                     "default": 10,
                 },
             },
@@ -463,7 +447,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
             rows = list_snapshot_metadata(db, profile_id, limit=limit)
         finally:
             db.close()
-        return _ok({"profile_id": profile_id, "count": len(rows), "snapshots": rows})
+        return _ok({"profile_id": profile_id, "snapshots": rows})
 
     # All other tools need the latest snapshot payload
     db = _db()
@@ -485,7 +469,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
                 **meta,
                 "activity": _extract_activity(payload),
                 "heart": _extract_heart(payload),
-                "sleep": sleep or {"note": "Sleep data not present in this snapshot."},
+                "sleep": sleep or "no_data",
                 "nutrition": _extract_nutrition(payload),
                 "vitals": _extract_vitals(payload),
                 "body_metrics": _extract_body_metrics(payload),
@@ -500,9 +484,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
             sleep = _extract_sleep(payload)
             return _ok({
                 **meta,
-                "sleep": sleep or {
-                    "note": "Sleep data (HKCategoryTypeIdentifierSleepAnalysis) not present in this snapshot."
-                },
+                "sleep": sleep or "no_data",
             })
         case "get_nutrition":
             return _ok({**meta, "nutrition": _extract_nutrition(payload)})
