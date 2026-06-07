@@ -22,4 +22,7 @@ fi
 echo "Restarting local-scale service..."
 sudo systemctl restart local-scale
 
+echo "Restarting local-scale-mcp service..."
+sudo systemctl restart local-scale-mcp
+
 echo "Deploy complete."

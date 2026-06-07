@@ -1,0 +1,18 @@
+[Unit]
+Description=Local Scale Apple Health MCP Server
+After=network-online.target local-scale.service
+Wants=network-online.target
+BindsTo=local-scale.service
+
+[Service]
+Type=simple
+User=scale
+Group=scale
+WorkingDirectory=/home/scale/local-scale/backend
+EnvironmentFile=/etc/local-scale/local-scale.env
+ExecStart=/home/scale/local-scale/backend/.venv/bin/python mcp_server.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
