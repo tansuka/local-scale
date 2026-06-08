@@ -32,6 +32,7 @@ class Settings:
     target_scale_names: tuple[str, ...]
     target_scale_addresses: tuple[str, ...]
     ble_capture_dir: Path
+    display_timezone: str
     llm_analysis_prompt_path: Path
 
 
@@ -115,6 +116,7 @@ def get_settings() -> Settings:
         ble_capture_dir=Path(
             os.getenv("LOCAL_SCALE_BLE_CAPTURE_DIR", data_root / "ble-captures")
         ),
+        display_timezone=os.getenv("LOCAL_SCALE_TIMEZONE", "Europe/Amsterdam"),
         llm_analysis_prompt_path=Path(
             os.getenv(
                 "LOCAL_SCALE_LLM_ANALYSIS_PROMPT_PATH",

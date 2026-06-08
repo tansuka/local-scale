@@ -32,6 +32,7 @@ def settings(tmp_path: Path) -> Settings:
         target_scale_names=("Soundlogic", "OKOK", "Chipsea"),
         target_scale_addresses=(),
         ble_capture_dir=tmp_path / "ble-captures",
+        display_timezone="Europe/Amsterdam",
         llm_analysis_prompt_path=repo_root / "deploy" / "llm-health-prompt.txt",
     )
 

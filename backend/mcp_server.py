@@ -26,6 +26,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 # Ensure the backend package is importable when running this file directly
 sys.path.insert(0, str(Path(__file__).parent))
@@ -133,11 +134,19 @@ def _no_snapshot(profile_id: int) -> list[types.TextContent]:
     return _ok({"error": f"No Apple Health snapshot found for profile_id={profile_id}."})
 
 
+def _to_local(dt: datetime) -> str:
+    """Convert a datetime to the configured display timezone for agent consumption."""
+    tz = ZoneInfo(_settings.display_timezone)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(tz).isoformat()
+
+
 def _snapshot_meta(snapshot: Any) -> dict:
     return {
         "profile_id": snapshot.profile_id,
-        "synced_at": snapshot.captured_at.isoformat(),
-        "period": f"{snapshot.period_start.isoformat()}/{snapshot.period_end.isoformat()}",
+        "synced_at": _to_local(snapshot.captured_at),
+        "period": f"{_to_local(snapshot.period_start)}/{_to_local(snapshot.period_end)}",
     }
 
 

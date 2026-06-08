@@ -1,8 +1,20 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.models import AppleHealthSnapshot
+
+
+def _to_local(dt: datetime) -> str:
+    """Convert a datetime to the configured display timezone."""
+    tz = ZoneInfo(get_settings().display_timezone)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(tz).isoformat()
 
 
 def get_latest_snapshot(db: Session, profile_id: int) -> AppleHealthSnapshot | None:
@@ -34,9 +46,9 @@ def list_snapshot_metadata(
     return [
         {
             "id": r.id,
-            "captured_at": r.captured_at.isoformat(),
-            "period_start": r.period_start.isoformat(),
-            "period_end": r.period_end.isoformat(),
+            "captured_at": _to_local(r.captured_at),
+            "period_start": _to_local(r.period_start),
+            "period_end": _to_local(r.period_end),
         }
         for r in rows
     ]

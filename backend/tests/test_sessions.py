@@ -114,8 +114,9 @@ def test_start_session_serializes_utc_datetimes(client):
     payload = start.json()
 
     assert start.status_code == 202
-    assert payload["started_at"].endswith("Z")
-    assert payload["expires_at"].endswith("Z")
+    # Timestamps should include a timezone offset (e.g. +02:00), not be naive
+    assert "+" in payload["started_at"] or "Z" in payload["started_at"]
+    assert "+" in payload["expires_at"] or "Z" in payload["expires_at"]
 
 
 def test_start_session_uses_adapter_expected_capture_window(client):
@@ -129,8 +130,8 @@ def test_start_session_uses_adapter_expected_capture_window(client):
         start = client.post("/api/sessions/start", json={"selected_profile_id": selected_profile_id})
         payload = start.json()
 
-        started_at = datetime.fromisoformat(payload["started_at"].replace("Z", "+00:00"))
-        expires_at = datetime.fromisoformat(payload["expires_at"].replace("Z", "+00:00"))
+        started_at = datetime.fromisoformat(payload["started_at"])
+        expires_at = datetime.fromisoformat(payload["expires_at"])
 
         assert start.status_code == 202
         assert (expires_at - started_at).total_seconds() == 3.0

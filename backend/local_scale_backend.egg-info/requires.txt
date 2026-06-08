@@ -1,8 +1,11 @@
 bleak>=0.22.3
 fastapi>=0.115.0
+httpx>=0.27.0
 python-multipart>=0.0.9
 sqlalchemy>=2.0.31
 uvicorn>=0.30.6
+websockets>=12.0
+mcp>=1.0
 
 [dev]
 httpx>=0.27.0
