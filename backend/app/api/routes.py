@@ -481,17 +481,30 @@ def post_apple_health_sync(
     period_start = _parse_dt(payload.snapshot.get("period_start"), now)
     period_end = _parse_dt(payload.snapshot.get("period_end"), now)
 
-    # Deduplicate: reject if a snapshot with the same captured_at already exists
+    # Derive snapshot_date in display timezone so local midnight boundaries apply
+    from zoneinfo import ZoneInfo
+    from app.core.config import get_settings
+    display_tz = ZoneInfo(get_settings().display_timezone)
+    snapshot_date = captured_at.astimezone(display_tz).date()
+
+    # Upsert: find existing row for this (profile_id, snapshot_date)
     existing = (
         db.query(AppleHealthSnapshot)
-        .filter_by(profile_id=payload.profile_id, captured_at=captured_at)
+        .filter_by(profile_id=payload.profile_id, snapshot_date=snapshot_date)
         .first()
     )
     if existing is not None:
-        return {"status": "duplicate", "id": existing.id}
+        existing.captured_at = captured_at
+        existing.period_start = period_start
+        existing.period_end = period_end
+        existing.payload_json = payload.snapshot
+        db.commit()
+        db.refresh(existing)
+        return {"status": "updated", "id": existing.id}
 
     snapshot = AppleHealthSnapshot(
         profile_id=payload.profile_id,
+        snapshot_date=snapshot_date,
         captured_at=captured_at,
         period_start=period_start,
         period_end=period_end,
@@ -521,7 +534,9 @@ def get_apple_health_snapshots(
     return [
         {
             "id": r.id,
+            "snapshot_date": r.snapshot_date.isoformat() if r.snapshot_date else None,
             "captured_at": r.captured_at,
+            "updated_at": r.updated_at,
             "period_start": r.period_start,
             "period_end": r.period_end,
             "payload": r.payload_json,

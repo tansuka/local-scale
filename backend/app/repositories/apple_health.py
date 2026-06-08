@@ -34,7 +34,9 @@ def list_snapshot_metadata(
     rows = (
         db.query(
             AppleHealthSnapshot.id,
+            AppleHealthSnapshot.snapshot_date,
             AppleHealthSnapshot.captured_at,
+            AppleHealthSnapshot.updated_at,
             AppleHealthSnapshot.period_start,
             AppleHealthSnapshot.period_end,
         )
@@ -46,7 +48,9 @@ def list_snapshot_metadata(
     return [
         {
             "id": r.id,
+            "snapshot_date": r.snapshot_date.isoformat() if r.snapshot_date else None,
             "captured_at": _to_local(r.captured_at),
+            "updated_at": _to_local(r.updated_at) if r.updated_at else None,
             "period_start": _to_local(r.period_start),
             "period_end": _to_local(r.period_end),
         }

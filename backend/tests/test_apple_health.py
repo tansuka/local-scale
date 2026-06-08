@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 SNAPSHOT_PAYLOAD = {
     "captured_at": "2026-06-07T10:00:00Z",
-    "period_start": "2026-06-01T00:00:00Z",
+    "period_start": "2026-06-07T00:00:00Z",
     "period_end": "2026-06-07T23:59:59Z",
     "daily_summaries": [
         {
@@ -55,7 +55,8 @@ def test_sync_rejects_unknown_profile(client: TestClient) -> None:
     assert resp.status_code == 404
 
 
-def test_sync_deduplicates_by_captured_at(client: TestClient) -> None:
+def test_sync_upserts_same_date(client: TestClient) -> None:
+    """Two syncs on the same calendar day should update the same row, not create a duplicate."""
     profile_id = _get_profile_id(client)
     resp1 = client.post(
         "/api/apple-health/sync",
@@ -64,30 +65,79 @@ def test_sync_deduplicates_by_captured_at(client: TestClient) -> None:
     assert resp1.status_code == 201
     first_id = resp1.json()["id"]
 
-    # Same captured_at → should return duplicate status
+    # Same date, different captured_at → should upsert
+    later_payload = {**SNAPSHOT_PAYLOAD, "captured_at": "2026-06-07T14:00:00Z"}
     resp2 = client.post(
         "/api/apple-health/sync",
-        json={"profile_id": profile_id, "snapshot": SNAPSHOT_PAYLOAD},
+        json={"profile_id": profile_id, "snapshot": later_payload},
     )
     assert resp2.status_code == 201
     body2 = resp2.json()
-    assert body2["status"] == "duplicate"
+    assert body2["status"] == "updated"
     assert body2["id"] == first_id
 
 
-def test_sync_allows_different_captured_at(client: TestClient) -> None:
+def test_sync_creates_separate_rows_for_different_dates(client: TestClient) -> None:
+    """Syncs on different calendar days should create separate rows."""
     profile_id = _get_profile_id(client)
     client.post(
         "/api/apple-health/sync",
         json={"profile_id": profile_id, "snapshot": SNAPSHOT_PAYLOAD},
     )
-    different_payload = {**SNAPSHOT_PAYLOAD, "captured_at": "2026-06-06T10:00:00Z"}
+    different_date_payload = {**SNAPSHOT_PAYLOAD, "captured_at": "2026-06-06T10:00:00Z"}
     resp = client.post(
         "/api/apple-health/sync",
-        json={"profile_id": profile_id, "snapshot": different_payload},
+        json={"profile_id": profile_id, "snapshot": different_date_payload},
     )
     assert resp.status_code == 201
     assert resp.json()["status"] == "ok"
+
+
+def test_sync_upsert_replaces_payload(client: TestClient) -> None:
+    """When upserting, the payload should be fully replaced with the latest data."""
+    profile_id = _get_profile_id(client)
+
+    # First sync: steps = 3000
+    payload_v1 = {
+        **SNAPSHOT_PAYLOAD,
+        "daily_summaries": [
+            {"date": "2026-06-07", "metrics": {"HKQuantityTypeIdentifierStepCount": 3000}},
+        ],
+    }
+    resp1 = client.post(
+        "/api/apple-health/sync",
+        json={"profile_id": profile_id, "snapshot": payload_v1},
+    )
+    assert resp1.json()["status"] == "ok"
+    snapshot_id = resp1.json()["id"]
+
+    # Second sync: steps = 8000 (same day, later captured_at)
+    payload_v2 = {
+        **SNAPSHOT_PAYLOAD,
+        "captured_at": "2026-06-07T18:00:00Z",
+        "daily_summaries": [
+            {"date": "2026-06-07", "metrics": {"HKQuantityTypeIdentifierStepCount": 8000}},
+        ],
+    }
+    resp2 = client.post(
+        "/api/apple-health/sync",
+        json={"profile_id": profile_id, "snapshot": payload_v2},
+    )
+    assert resp2.json()["status"] == "updated"
+    assert resp2.json()["id"] == snapshot_id
+
+    # Verify stored payload has the updated steps
+    snapshots_resp = client.get(
+        "/api/apple-health/snapshots", params={"profile_id": profile_id}
+    )
+    snapshots = snapshots_resp.json()
+    # Find the snapshot for 2026-06-07
+    day_snapshots = [s for s in snapshots if s.get("snapshot_date") == "2026-06-07"]
+    assert len(day_snapshots) == 1
+    stored_steps = day_snapshots[0]["payload"]["daily_summaries"][0]["metrics"][
+        "HKQuantityTypeIdentifierStepCount"
+    ]
+    assert stored_steps == 8000
 
 
 # ── GET /api/apple-health/snapshots ───────────────────────────────────────────
@@ -107,7 +157,9 @@ def test_get_snapshots_returns_list(client: TestClient) -> None:
     assert len(data) >= 1
     first = data[0]
     assert "id" in first
+    assert "snapshot_date" in first
     assert "captured_at" in first
+    assert "updated_at" in first
     assert "payload" in first
 
 

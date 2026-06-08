@@ -143,11 +143,14 @@ def _to_local(dt: datetime) -> str:
 
 
 def _snapshot_meta(snapshot: Any) -> dict:
-    return {
+    meta: dict = {
         "profile_id": snapshot.profile_id,
         "synced_at": _to_local(snapshot.captured_at),
         "period": f"{_to_local(snapshot.period_start)}/{_to_local(snapshot.period_end)}",
     }
+    if snapshot.updated_at is not None:
+        meta["last_updated"] = _to_local(snapshot.updated_at)
+    return meta
 
 
 # ── Category extractors ────────────────────────────────────────────────────────
