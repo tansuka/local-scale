@@ -1,7 +1,18 @@
 """Tests for Apple Health sync and snapshot endpoints."""
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
+from app.core.config import Settings
+from app.db import Database
+from app.repositories.apple_health import (
+    get_latest_snapshot,
+    get_snapshot_by_date,
+    list_snapshot_dates,
+)
 
 
 SNAPSHOT_PAYLOAD = {
@@ -167,3 +178,98 @@ def test_get_snapshots_empty_for_unknown_profile(client: TestClient) -> None:
     resp = client.get("/api/apple-health/snapshots", params={"profile_id": 999999})
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+# ── Date-scoped snapshot lookups (used by the MCP server) ─────────────────────
+
+
+def _session(settings: Settings) -> Session:
+    """Open a session against the same SQLite file the test client writes to."""
+    return Database(settings).make_session()
+
+
+def test_get_snapshot_by_date_returns_that_day(
+    client: TestClient, settings: Settings
+) -> None:
+    profile_id = _get_profile_id(client)
+    client.post(
+        "/api/apple-health/sync",
+        json={"profile_id": profile_id, "snapshot": SNAPSHOT_PAYLOAD},
+    )
+    yesterday_payload = {
+        **SNAPSHOT_PAYLOAD,
+        "captured_at": "2026-06-06T10:00:00Z",
+        "daily_summaries": [
+            {"date": "2026-06-06", "metrics": {"HKQuantityTypeIdentifierStepCount": 2000}}
+        ],
+    }
+    client.post(
+        "/api/apple-health/sync",
+        json={"profile_id": profile_id, "snapshot": yesterday_payload},
+    )
+
+    db = _session(settings)
+    try:
+        snapshot = get_snapshot_by_date(db, profile_id, date(2026, 6, 6))
+        assert snapshot is not None
+        assert snapshot.snapshot_date == date(2026, 6, 6)
+        steps = snapshot.payload_json["daily_summaries"][0]["metrics"][
+            "HKQuantityTypeIdentifierStepCount"
+        ]
+        assert steps == 2000
+
+        # The latest snapshot is still the newer day — the two lookups differ
+        latest = get_latest_snapshot(db, profile_id)
+        assert latest is not None
+        assert latest.snapshot_date == date(2026, 6, 7)
+    finally:
+        db.close()
+
+
+def test_get_snapshot_by_date_returns_none_for_unsynced_day(
+    client: TestClient, settings: Settings
+) -> None:
+    profile_id = _get_profile_id(client)
+    client.post(
+        "/api/apple-health/sync",
+        json={"profile_id": profile_id, "snapshot": SNAPSHOT_PAYLOAD},
+    )
+    db = _session(settings)
+    try:
+        assert get_snapshot_by_date(db, profile_id, date(2020, 1, 1)) is None
+    finally:
+        db.close()
+
+
+def test_list_snapshot_dates_newest_first(
+    client: TestClient, settings: Settings
+) -> None:
+    profile_id = _get_profile_id(client)
+    for captured_at in ("2026-06-05T10:00:00Z", "2026-06-07T10:00:00Z", "2026-06-06T10:00:00Z"):
+        client.post(
+            "/api/apple-health/sync",
+            json={
+                "profile_id": profile_id,
+                "snapshot": {**SNAPSHOT_PAYLOAD, "captured_at": captured_at},
+            },
+        )
+    db = _session(settings)
+    try:
+        assert list_snapshot_dates(db, profile_id) == [
+            "2026-06-07",
+            "2026-06-06",
+            "2026-06-05",
+        ]
+        assert len(list_snapshot_dates(db, profile_id, limit=2)) == 2
+    finally:
+        db.close()
+
+
+def test_list_snapshot_dates_empty_for_unknown_profile(
+    client: TestClient, settings: Settings
+) -> None:
+    db = _session(settings)
+    try:
+        assert list_snapshot_dates(db, 999999) == []
+    finally:
+        db.close()

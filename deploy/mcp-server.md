@@ -63,7 +63,14 @@ Add this to your agent's MCP config (replace `<minipc-ip>` with your Mini PC's L
 | `get_symptoms` | Active symptoms with severity (fatigue, headache, etc.) |
 | `get_snapshots_list` | Metadata-only list — check freshness without loading payloads |
 
-All tools accept `profile_id: int`. `get_snapshots_list` also accepts `limit: int` (default 10, max 90).
+All data tools accept:
+
+| Parameter | Required | Description |
+|---|---|---|
+| `profile_id` | yes | Profile to read |
+| `snapshot_date` | no | Day to read: `YYYY-MM-DD`, `today`, or `yesterday`. Omit for the most recent snapshot. |
+
+`get_snapshots_list` accepts `profile_id` and `limit: int` (default 10, max 90) — not `snapshot_date`, since it lists every day.
 
 ---
 
@@ -95,4 +102,6 @@ iPhone shortcut
 - **Body fat %**: stored as a ratio (0.165) in Apple Health, returned as a percentage (16.5%) by the tools.
 - **Body metrics vs scale data**: `get_body_metrics` returns Apple Health readings. For BIA body composition from the scale, use the FastAPI measurement endpoints instead.
 - **Freshness**: use `get_snapshots_list` first to check `synced_at` before calling heavier tools.
+- **Historical days**: sync stores one row per calendar day, so any previously synced day can be read back with `snapshot_date` (e.g. `get_activity(profile_id=1, snapshot_date="yesterday")`). Every response carries a `date` field naming the day it came from. Asking for a day that was never synced returns an error listing `available_dates` rather than silently falling back to the latest snapshot.
+- **Day boundaries**: `today`/`yesterday` and each snapshot's date are resolved in the display timezone (`Europe/Amsterdam` by default), matching how the sync endpoint files snapshots.
 - **No authentication**: the MCP server has no auth layer — it is designed for trusted LAN access only.

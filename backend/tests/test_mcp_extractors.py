@@ -6,6 +6,10 @@ payload and the structured tool output.
 """
 from __future__ import annotations
 
+from datetime import date, timedelta
+
+import pytest
+
 
 # Import the functions under test — the module-level side effects (engine, etc.)
 # require the settings to be resolvable, so we patch minimally.
@@ -22,6 +26,7 @@ from mcp_server import (  # noqa: E402
     _extract_symptoms,
     _extract_vitals,
     _extract_workouts,
+    _resolve_snapshot_date,
     _sample_date,
     _sample_value,
     _sample_with_date,
@@ -365,3 +370,46 @@ def test_extract_symptoms_filters_not_present():
 
 def test_extract_symptoms_empty():
     assert _extract_symptoms({}) == []
+
+
+# ── _resolve_snapshot_date ─────────────────────────────────────────────────────
+
+
+def test_resolve_snapshot_date_none_means_latest():
+    assert _resolve_snapshot_date(None) is None
+
+
+def test_resolve_snapshot_date_empty_string_means_latest():
+    assert _resolve_snapshot_date("   ") is None
+
+
+def test_resolve_snapshot_date_parses_iso_date():
+    assert _resolve_snapshot_date("2026-06-07") == date(2026, 6, 7)
+
+
+def test_resolve_snapshot_date_accepts_date_object():
+    assert _resolve_snapshot_date(date(2026, 6, 7)) == date(2026, 6, 7)
+
+
+def test_resolve_snapshot_date_takes_date_part_of_timestamp():
+    assert _resolve_snapshot_date("2026-06-07T10:00:00Z") == date(2026, 6, 7)
+
+
+def test_resolve_snapshot_date_today_and_yesterday_are_one_day_apart():
+    today = _resolve_snapshot_date("today")
+    yesterday = _resolve_snapshot_date("yesterday")
+    assert today - yesterday == timedelta(days=1)
+
+
+def test_resolve_snapshot_date_relative_words_are_case_insensitive():
+    assert _resolve_snapshot_date("Yesterday") == _resolve_snapshot_date("yesterday")
+
+
+def test_resolve_snapshot_date_rejects_garbage():
+    with pytest.raises(ValueError):
+        _resolve_snapshot_date("last tuesday")
+
+
+def test_resolve_snapshot_date_rejects_impossible_date():
+    with pytest.raises(ValueError):
+        _resolve_snapshot_date("2026-13-45")

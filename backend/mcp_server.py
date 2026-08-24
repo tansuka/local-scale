@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -42,7 +42,12 @@ from starlette.requests import Request
 from starlette.routing import Mount, Route
 
 from app.core.config import get_settings
-from app.repositories.apple_health import get_latest_snapshot, list_snapshot_metadata
+from app.repositories.apple_health import (
+    get_latest_snapshot,
+    get_snapshot_by_date,
+    list_snapshot_dates,
+    list_snapshot_metadata,
+)
 
 # ── Database (read-only connection to the same SQLite as FastAPI) ──────────────
 
@@ -134,6 +139,16 @@ def _no_snapshot(profile_id: int) -> list[types.TextContent]:
     return _ok({"error": f"No Apple Health snapshot found for profile_id={profile_id}."})
 
 
+def _no_snapshot_for_date(
+    profile_id: int, day: date, available: list[str]
+) -> list[types.TextContent]:
+    """Missing-day error that also tells the agent which days it can ask for."""
+    return _ok({
+        "error": f"No Apple Health snapshot for profile_id={profile_id} on {day.isoformat()}.",
+        "available_dates": available,
+    })
+
+
 def _to_local(dt: datetime) -> str:
     """Convert a datetime to the configured display timezone for agent consumption."""
     tz = ZoneInfo(_settings.display_timezone)
@@ -142,9 +157,35 @@ def _to_local(dt: datetime) -> str:
     return dt.astimezone(tz).isoformat()
 
 
+def _resolve_snapshot_date(raw: Any) -> date | None:
+    """Parse a snapshot_date argument into a date; None means 'use the latest snapshot'.
+
+    Accepts an ISO date, the relative words 'today'/'yesterday' (resolved in the
+    display timezone, so day boundaries match how snapshots are filed), and a full
+    timestamp, whose date part is taken. Raises ValueError on anything else.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, date) and not isinstance(raw, datetime):
+        return raw
+    text = str(raw).strip()
+    if not text:
+        return None
+    lowered = text.lower()
+    if lowered in ("today", "yesterday"):
+        today = datetime.now(ZoneInfo(_settings.display_timezone)).date()
+        return today if lowered == "today" else today - timedelta(days=1)
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        # Tolerate a full timestamp ("2026-06-07T10:00:00Z") by taking its date part
+        return date.fromisoformat(text[:10])
+
+
 def _snapshot_meta(snapshot: Any) -> dict:
     meta: dict = {
         "profile_id": snapshot.profile_id,
+        "date": snapshot.snapshot_date.isoformat() if snapshot.snapshot_date else None,
         "synced_at": _to_local(snapshot.captured_at),
         "period": f"{_to_local(snapshot.period_start)}/{_to_local(snapshot.period_end)}",
     }
@@ -357,13 +398,20 @@ def _extract_symptoms(payload: dict) -> list[dict]:
 
 # ── Tool definitions ───────────────────────────────────────────────────────────
 
-_PROFILE_ID_SCHEMA = {
+_SNAPSHOT_SCHEMA = {
     "type": "object",
     "properties": {
         "profile_id": {
             "type": "integer",
             "description": "The local-scale profile ID to fetch data for.",
-        }
+        },
+        "snapshot_date": {
+            "type": "string",
+            "description": (
+                "Optional day to read: 'YYYY-MM-DD', 'today', or 'yesterday'. "
+                "Omit for the most recent snapshot. Call get_snapshots_list for available dates."
+            ),
+        },
     },
     "required": ["profile_id"],
 }
@@ -376,51 +424,54 @@ TOOLS: list[types.Tool] = [
             "'synced_at' = when data was sent from iPhone. Each metric has its own 'measured_at' = actual reading time. "
             "Null metrics are omitted. Daily metrics are period averages."
         ),
-        inputSchema=_PROFILE_ID_SCHEMA,
+        inputSchema=_SNAPSHOT_SCHEMA,
     ),
     types.Tool(
         name="get_activity",
         description="Daily activity averages: steps, energy, exercise, distance, flights, stand/move time, daylight.",
-        inputSchema=_PROFILE_ID_SCHEMA,
+        inputSchema=_SNAPSHOT_SCHEMA,
     ),
     types.Tool(
         name="get_heart",
         description="Heart: resting HR, HRV, walking HR, recovery, VO2max, O2 sat, BP, AFib, ECG. Each has measured_at.",
-        inputSchema=_PROFILE_ID_SCHEMA,
+        inputSchema=_SNAPSHOT_SCHEMA,
     ),
     types.Tool(
         name="get_sleep",
         description="Sleep: total hours, below-7h flag, minutes per stage (core/deep/REM/awake/inBed).",
-        inputSchema=_PROFILE_ID_SCHEMA,
+        inputSchema=_SNAPSHOT_SCHEMA,
     ),
     types.Tool(
         name="get_nutrition",
         description="Nutrition averages: calories, water, protein, carbs, fat, fiber, sugar, sodium, caffeine, alcohol.",
-        inputSchema=_PROFILE_ID_SCHEMA,
+        inputSchema=_SNAPSHOT_SCHEMA,
     ),
     types.Tool(
         name="get_vitals",
         description="Vitals: body/wrist temp, respiratory rate, blood glucose, blood alcohol. Each has measured_at.",
-        inputSchema=_PROFILE_ID_SCHEMA,
+        inputSchema=_SNAPSHOT_SCHEMA,
     ),
     types.Tool(
         name="get_body_metrics",
         description="Body: weight, fat%, BMI, lean mass, waist, height from Apple Health (not scale BIA). Each has measured_at.",
-        inputSchema=_PROFILE_ID_SCHEMA,
+        inputSchema=_SNAPSHOT_SCHEMA,
     ),
     types.Tool(
         name="get_workouts",
         description="Workout sessions: type, start, duration, calories, distance.",
-        inputSchema=_PROFILE_ID_SCHEMA,
+        inputSchema=_SNAPSHOT_SCHEMA,
     ),
     types.Tool(
         name="get_symptoms",
         description="Active symptoms with severity and time window. Empty if none.",
-        inputSchema=_PROFILE_ID_SCHEMA,
+        inputSchema=_SNAPSHOT_SCHEMA,
     ),
     types.Tool(
         name="get_snapshots_list",
-        description="List available snapshots (id, synced_at, period). Check freshness before heavier calls.",
+        description=(
+            "List available snapshots (id, snapshot_date, synced_at, period). Check freshness before "
+            "heavier calls, and use snapshot_date values to request a past day from the other tools."
+        ),
         inputSchema={
             "type": "object",
             "properties": {
@@ -461,17 +512,44 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
             db.close()
         return _ok({"profile_id": profile_id, "snapshots": rows})
 
-    # All other tools need the latest snapshot payload
+    # All other tools read one snapshot: the requested day, or the latest
+    try:
+        requested_date = _resolve_snapshot_date(arguments.get("snapshot_date"))
+    except ValueError:
+        return _ok({
+            "error": (
+                f"Invalid snapshot_date {arguments.get('snapshot_date')!r}. "
+                "Use YYYY-MM-DD, 'today', or 'yesterday'."
+            )
+        })
+
     db = _db()
     try:
-        snapshot = get_latest_snapshot(db, profile_id)
+        if requested_date is None:
+            snapshot = get_latest_snapshot(db, profile_id)
+            if snapshot is None:
+                return _no_snapshot(profile_id)
+        else:
+            snapshot = get_snapshot_by_date(db, profile_id, requested_date)
+            if snapshot is None:
+                return _no_snapshot_for_date(
+                    profile_id, requested_date, list_snapshot_dates(db, profile_id)
+                )
     finally:
         db.close()
 
-    if snapshot is None:
-        return _no_snapshot(profile_id)
-
     payload = snapshot.payload_json or {}
+
+    # Filter daily_summaries to only the snapshot's own date.
+    # The iOS client may include prior days in the window, but those
+    # belong to their own snapshot rows — mixing them in would skew
+    # averages and confuse agents about which day the data represents.
+    if snapshot.snapshot_date is not None:
+        daily = payload.get("daily_summaries", [])
+        today_only = [d for d in daily if d.get("date") == snapshot.snapshot_date.isoformat()]
+        if today_only:
+            payload = {**payload, "daily_summaries": today_only}
+
     meta = _snapshot_meta(snapshot)
 
     match name:

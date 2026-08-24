@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
@@ -25,6 +25,37 @@ def get_latest_snapshot(db: Session, profile_id: int) -> AppleHealthSnapshot | N
         .order_by(AppleHealthSnapshot.captured_at.desc())
         .first()
     )
+
+
+def get_snapshot_by_date(
+    db: Session, profile_id: int, snapshot_date: date
+) -> AppleHealthSnapshot | None:
+    """Return the snapshot for one specific local date, or None if that day was never synced.
+
+    Sync upserts one row per (profile_id, snapshot_date), so at most one row matches;
+    the ordering only guards against legacy rows that predate the upsert migration.
+    """
+    return (
+        db.query(AppleHealthSnapshot)
+        .filter_by(profile_id=profile_id, snapshot_date=snapshot_date)
+        .order_by(AppleHealthSnapshot.captured_at.desc())
+        .first()
+    )
+
+
+def list_snapshot_dates(db: Session, profile_id: int, limit: int = 10) -> list[str]:
+    """Return the most recent snapshot dates (newest first) as ISO strings."""
+    rows = (
+        db.query(AppleHealthSnapshot.snapshot_date)
+        .filter(
+            AppleHealthSnapshot.profile_id == profile_id,
+            AppleHealthSnapshot.snapshot_date.isnot(None),
+        )
+        .order_by(AppleHealthSnapshot.snapshot_date.desc())
+        .limit(limit)
+        .all()
+    )
+    return [r.snapshot_date.isoformat() for r in rows]
 
 
 def list_snapshot_metadata(
