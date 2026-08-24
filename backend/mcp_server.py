@@ -39,6 +39,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.applications import Starlette
 from starlette.requests import Request
+from starlette.responses import Response
 from starlette.routing import Mount, Route
 
 from app.core.config import get_settings
@@ -595,13 +596,22 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
 sse_transport = SseServerTransport("/messages/")
 
 
-async def handle_sse(request: Request) -> None:
+async def handle_sse(request: Request) -> Response:
+    """Serve one MCP session over SSE.
+
+    connect_sse takes over the ASGI send channel and streams the response itself,
+    so the body here is already finished by the time it returns. Starlette still
+    calls whatever the endpoint hands back, so return an empty Response rather
+    than None — returning None raises TypeError once the client disconnects and
+    tears the stream down as an error instead of a clean close.
+    """
     async with sse_transport.connect_sse(
         request.scope, request.receive, request._send
     ) as streams:
         await server.run(
             streams[0], streams[1], server.create_initialization_options()
         )
+    return Response()
 
 
 starlette_app = Starlette(
