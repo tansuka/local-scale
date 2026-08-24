@@ -48,6 +48,17 @@ def estimate_fat_pct(
     weight_kg: float,
     measurement_date: date,
 ) -> float:
+    """Estimate body fat % from BMI, age and sex.
+
+    Deurenberg, Weststrate & Seidell (1991), Br J Nutr 65(2):105-114, "Body mass
+    index as a measure of body fatness: age- and sex-specific prediction
+    formulas". The paper gives a separate equation for children, because BMI
+    itself rises with height during growth; it is applied below age 16.
+
+    Accuracy is population-level (SEE ~4% fat for adults, ~4.4% for the child
+    equation). Because the only per-measurement input is weight, the result is a
+    linear function of weight and carries no information beyond BMI.
+    """
     height_m = float(profile.height_cm) / 100.0
     bmi = weight_kg / (height_m**2)
     age_years = age_on(profile.birth_date, measurement_date)
@@ -55,7 +66,7 @@ def estimate_fat_pct(
     if age_years >= 16:
         value = (1.2 * bmi) + (0.23 * age_years) - (10.8 * is_male) - 5.4
     else:
-        value = (1.294 * bmi) + (0.20 * age_years) - (11.4 * is_male) - 8.0
+        value = (1.51 * bmi) - (0.70 * age_years) - (3.6 * is_male) + 1.4
     return round(_clamp("fat_pct", value), 2)
 
 

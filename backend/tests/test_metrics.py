@@ -35,4 +35,6 @@ def test_normalize_measurement_derives_secondary_metrics():
     assert normalized["water_weight_kg"] == 45.15
     assert normalized["skeletal_muscle_weight_kg"] == 33.7
     assert normalized["status_by_metric"]["bmi"] == "healthy"
-    assert normalized["status_by_metric"]["skeletal_muscle_weight_kg"] == "healthy"
+    # Only skeletal_muscle_pct was supplied, so the weight comes from the Lee
+    # estimate and is tagged anthropometric_estimated — hence not classified.
+    assert normalized["status_by_metric"]["skeletal_muscle_weight_kg"] == "unknown"

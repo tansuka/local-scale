@@ -13,7 +13,7 @@ from app.services.anthropometric import (
 )
 
 
-def test_estimate_fat_pct_for_adult_male_uses_deurenberg_1992():
+def test_estimate_fat_pct_for_adult_male_uses_deurenberg_1991():
     profile = Profile(
         id=1,
         name="Alex",
@@ -34,7 +34,7 @@ def test_estimate_fat_pct_for_adult_male_uses_deurenberg_1992():
     assert fat_pct == 19.56
 
 
-def test_estimate_fat_pct_for_adult_female_uses_deurenberg_1992():
+def test_estimate_fat_pct_for_adult_female_uses_deurenberg_1991():
     profile = Profile(
         id=1,
         name="Casey",
@@ -73,7 +73,8 @@ def test_estimate_fat_pct_for_under_16_profile_uses_child_branch():
         measurement_date=date(2026, 3, 17),
     )
 
-    assert fat_pct == 9.12
+    # Deurenberg 1991 child equation: 1.51*BMI - 0.70*age - 3.6*sex + 1.4
+    assert fat_pct == 18.94
 
 
 def test_estimate_water_pct_uses_hume_weyers_formula():

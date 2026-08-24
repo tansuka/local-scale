@@ -44,7 +44,9 @@ def test_normalize_measurement_falls_back_to_anthropometric_estimates():
         normalized["source_metric_map"]["skeletal_muscle_weight_kg"]
         == "anthropometric_estimated"
     )
-    assert normalized["status_by_metric"]["skeletal_muscle_weight_kg"] == "healthy"
+    # Anthropometrically estimated muscle mass is not classified: it is a
+    # deterministic function of weight, height, age and sex.
+    assert normalized["status_by_metric"]["skeletal_muscle_weight_kg"] == "unknown"
 
 
 def test_normalize_measurement_preserves_explicit_values_over_anthropometric_fallback():

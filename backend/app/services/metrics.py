@@ -126,6 +126,9 @@ def normalize_measurement(profile: Profile, raw: dict) -> dict:
         muscle_pct=muscle_pct,
         skeletal_muscle_weight_kg=skeletal_muscle_weight_kg,
         skeletal_muscle_pct=skeletal_muscle_pct,
+        skeletal_muscle_is_estimated=(
+            source_metric_map.get("skeletal_muscle_weight_kg") == ANTHROPOMETRIC_SOURCE
+        ),
     )
 
     source_metric_map = {

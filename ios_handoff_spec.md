@@ -390,20 +390,23 @@ struct HealthAnalysis: Codable {
 BMI = weight_kg / (height_m²)
 ```
 
-### 5.2 Body Fat % (Deurenberg equation)
+### 5.2 Body Fat % (Deurenberg 1991)
 
 ```swift
 func estimateFatPct(bmi: Double, ageYears: Int, isMale: Bool) -> Double {
+    let sex = isMale ? 1.0 : 0.0
     if ageYears >= 16 {
-        return (1.2 * bmi) + (0.23 * Double(ageYears)) - (10.8 * (isMale ? 1.0 : 0.0)) - 5.4
+        return (1.2 * bmi) + (0.23 * Double(ageYears)) - (10.8 * sex) - 5.4
     } else {
-        return (1.294 * bmi) + (0.20 * Double(ageYears)) - (11.4 * (isMale ? 1.0 : 0.0)) - 8.0
+        // Separate child equation from the same paper: BMI rises with height
+        // during growth, so the adult coefficients do not transfer.
+        return (1.51 * bmi) - (0.70 * Double(ageYears)) - (3.6 * sex) + 1.4
     }
 }
 // Clamp to 3.0...70.0
 ```
 
-### 5.3 Total Body Water (Watson formula)
+### 5.3 Total Body Water (Hume–Weyers 1971)
 
 ```swift
 // Male:   TBW = 0.194786 * height_cm + 0.296785 * weight_kg - 14.012934
