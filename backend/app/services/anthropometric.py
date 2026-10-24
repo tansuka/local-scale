@@ -212,18 +212,25 @@ def backfill_missing_measurements(db: Session) -> int:
             if waist_cm is not None and "waist_cm" not in source_metric_map:
                 source_metric_map["waist_cm"] = "carried_forward"
 
+        skeletal_muscle_pct = measurement.skeletal_muscle_pct
         skeletal_muscle_weight_kg = measurement.skeletal_muscle_weight_kg
         if (
             source_metric_map.get("skeletal_muscle_weight_kg") == ANTHROPOMETRIC_SOURCE
-            and measurement.skeletal_muscle_pct is not None
+            and source_metric_map.get("skeletal_muscle_pct") != ANTHROPOMETRIC_SOURCE
+            and skeletal_muscle_pct is not None
             and skeletal_muscle_weight_kg is not None
-            and not _skeletal_muscle_pct_matches_mass(measurement)
         ):
-            # Stored before reported percentages took precedence: the percentage
-            # came from the scale or an import, but an estimate replaced the mass
-            # that follows from it. Drop the estimate so the mass is re-derived.
-            skeletal_muscle_weight_kg = None
-            source_metric_map.pop("skeletal_muscle_weight_kg", None)
+            if _skeletal_muscle_pct_matches_mass(measurement):
+                # The percentage was derived from the estimated mass but tagged with
+                # the device source. Drop it so it is re-derived and tagged an estimate.
+                skeletal_muscle_pct = None
+                source_metric_map.pop("skeletal_muscle_pct", None)
+            else:
+                # Stored before reported percentages took precedence: the percentage
+                # came from the scale or an import, but an estimate replaced the mass
+                # that follows from it. Drop the estimate so the mass is re-derived.
+                skeletal_muscle_weight_kg = None
+                source_metric_map.pop("skeletal_muscle_weight_kg", None)
 
         normalized = normalize_measurement(
             profile,
@@ -238,7 +245,7 @@ def backfill_missing_measurements(db: Session) -> int:
                 "bmi": measurement.bmi,
                 "fat_pct": measurement.fat_pct,
                 "fat_weight_kg": measurement.fat_weight_kg,
-                "skeletal_muscle_pct": measurement.skeletal_muscle_pct,
+                "skeletal_muscle_pct": skeletal_muscle_pct,
                 "skeletal_muscle_weight_kg": skeletal_muscle_weight_kg,
                 "muscle_pct": measurement.muscle_pct,
                 "muscle_weight_kg": measurement.muscle_weight_kg,

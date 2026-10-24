@@ -47,6 +47,11 @@ def test_normalize_measurement_falls_back_to_anthropometric_estimates():
     # Anthropometrically estimated muscle mass is not classified: it is a
     # deterministic function of weight, height, age and sex.
     assert normalized["status_by_metric"]["skeletal_muscle_weight_kg"] == "unknown"
+    # The percentage is derived from that estimate, so it is tagged and treated
+    # the same way rather than credited to the scale.
+    assert normalized["skeletal_muscle_pct"] == 43.01
+    assert normalized["source_metric_map"]["skeletal_muscle_pct"] == "anthropometric_estimated"
+    assert normalized["status_by_metric"]["skeletal_muscle_pct"] == "unknown"
 
 
 def test_normalize_measurement_preserves_explicit_values_over_anthropometric_fallback():

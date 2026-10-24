@@ -271,3 +271,33 @@ def test_backfill_rederives_mass_that_an_estimate_replaced_for_a_reported_pct(tm
 
     with database.make_session() as db:
         assert backfill_missing_measurements(db) == 0
+
+
+def test_backfill_retags_pct_that_was_derived_from_an_estimated_mass(tmp_path):
+    database = Database(_settings(tmp_path))
+    database.create_all()
+
+    with database.make_session() as db:
+        # 43.01% is 31.91 / 74.19 kg: derived from the Lee estimate, yet stored
+        # with the device source and a health band.
+        measurement_id = _insert_skeletal_muscle_measurement(
+            db,
+            skeletal_muscle_pct=43.01,
+            skeletal_muscle_weight_kg=31.91,
+            source_metric_map={
+                "skeletal_muscle_pct": "ios_bluetooth",
+                "skeletal_muscle_weight_kg": "anthropometric_estimated",
+            },
+        )
+
+    with database.make_session() as db:
+        assert backfill_missing_measurements(db) == 1
+        measurement = db.get(Measurement, measurement_id)
+
+        assert measurement.skeletal_muscle_pct == 43.01
+        assert measurement.skeletal_muscle_weight_kg == 31.91
+        assert measurement.source_metric_map["skeletal_muscle_pct"] == "anthropometric_estimated"
+        assert measurement.status_by_metric["skeletal_muscle_pct"] == "unknown"
+
+    with database.make_session() as db:
+        assert backfill_missing_measurements(db) == 0

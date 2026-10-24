@@ -92,6 +92,12 @@ def normalize_measurement(profile: Profile, raw: dict) -> dict:
     skeletal_muscle_weight_kg = effective_raw.get("skeletal_muscle_weight_kg")
     if skeletal_muscle_pct is None and skeletal_muscle_weight_kg is not None:
         skeletal_muscle_pct = round(skeletal_muscle_weight_kg / weight_kg * 100.0, 2)
+        # The percentage inherits the mass's provenance; it was not measured.
+        source_metric_map["skeletal_muscle_pct"] = (
+            ANTHROPOMETRIC_SOURCE
+            if source_metric_map.get("skeletal_muscle_weight_kg") == ANTHROPOMETRIC_SOURCE
+            else "computed"
+        )
     if skeletal_muscle_pct is not None and skeletal_muscle_weight_kg is None:
         skeletal_muscle_weight_kg = round(weight_kg * skeletal_muscle_pct / 100.0, 2)
 

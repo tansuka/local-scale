@@ -105,5 +105,11 @@ def classify_metrics(*, sex: str, age_years: int, height_cm: float | None, bmi: 
             skeletal_muscle_weight_kg=skeletal_muscle_weight_kg,
             is_estimated=skeletal_muscle_is_estimated,
         ),
-        "skeletal_muscle_pct": _band(skeletal_muscle_pct, *skeletal_range),
+        # A percentage derived from estimated muscle mass restates BMI just like
+        # the mass does, so it is left unclassified for the same reason.
+        "skeletal_muscle_pct": (
+            "unknown"
+            if skeletal_muscle_is_estimated
+            else _band(skeletal_muscle_pct, *skeletal_range)
+        ),
     }
