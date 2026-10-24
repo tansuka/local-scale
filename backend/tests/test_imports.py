@@ -75,3 +75,18 @@ def test_update_profile(client):
     assert response.status_code == 200
     assert response.json()["height_cm"] == 185
     assert response.json()["color"] == "#1d4ed8"
+
+
+def test_import_converts_offset_timestamps_to_utc(client):
+    profile_id = client.get("/api/dashboard").json()["selected_profile_id"]
+
+    commit = client.post(
+        "/api/imports/csv/commit",
+        files={"file": ("offset.csv", "timestamp,weight\n2026-10-21T08:00:00+02:00,80.0\n", "text/csv")},
+        data={"profile_id": str(profile_id)},
+    )
+
+    assert commit.status_code == 200
+    assert commit.json()["imported"] == 1
+    latest = client.get(f"/api/measurements?profile_id={profile_id}&limit=1").json()[0]
+    assert latest["measured_at"] == "2026-10-21T08:00:00+02:00"

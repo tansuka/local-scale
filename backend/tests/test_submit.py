@@ -71,3 +71,31 @@ def test_submit_rejects_out_of_range_body_composition(client):
     )
 
     assert response.status_code == 422
+
+
+def test_submit_stores_offset_timestamps_as_the_same_instant(client):
+    profile_id = _selected_profile_id(client)
+
+    response = client.post(
+        "/api/measurements/submit",
+        json={
+            "profile_id": profile_id,
+            "measured_at": "2026-10-21T08:00:00+02:00",
+            "weight_kg": 80.0,
+        },
+    )
+
+    assert response.status_code == 201
+    # Served in Europe/Amsterdam, which is +02:00 on this date: same instant as sent.
+    assert response.json()["measured_at"] == "2026-10-21T08:00:00+02:00"
+
+    # The same instant written in UTC is recognised as a duplicate.
+    duplicate = client.post(
+        "/api/measurements/submit",
+        json={
+            "profile_id": profile_id,
+            "measured_at": "2026-10-21T06:00:00Z",
+            "weight_kg": 80.0,
+        },
+    )
+    assert duplicate.status_code == 409

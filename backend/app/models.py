@@ -5,10 +5,30 @@ from typing import Any
 
 from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
 
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+class UTCDateTime(TypeDecorator):
+    """DateTime that converts timezone-aware values to UTC before storing them.
+
+    SQLite has no timezone type: SQLAlchemy writes the wall-clock fields and
+    drops the offset, so 08:00+02:00 would be stored as 08:00 and read back as
+    08:00 UTC. The app treats every naive value it reads as UTC, so convert on
+    the way in. This also applies to query parameters compared against these
+    columns, such as the duplicate-detection window.
+    """
+
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(self, value: datetime | None, dialect) -> datetime | None:
+        if value is not None and value.tzinfo is not None:
+            return value.astimezone(timezone.utc)
+        return value
 
 
 class Base(DeclarativeBase):
@@ -27,9 +47,9 @@ class Profile(Base):
     color: Mapped[str] = mapped_column(String(16), default="#0f766e", nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime(timezone=True),
         default=utcnow,
         onupdate=utcnow,
     )
@@ -49,7 +69,7 @@ class AppSettings(Base):
     llm_model: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     llm_api_key: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime(timezone=True),
         default=utcnow,
         onupdate=utcnow,
         nullable=False,
@@ -64,7 +84,7 @@ class ScaleDevice(Base):
     advertised_name: Mapped[str] = mapped_column(String(120), nullable=False)
     model_family: Mapped[str | None] = mapped_column(String(120))
     protocol_family: Mapped[str | None] = mapped_column(String(120))
-    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime | None] = mapped_column(UTCDateTime(timezone=True))
 
 
 class ImportBatch(Base):
@@ -78,7 +98,7 @@ class ImportBatch(Base):
     rows_imported: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     rows_skipped: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     errors_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), default=utcnow)
 
 
 class Measurement(Base):
@@ -86,7 +106,7 @@ class Measurement(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     profile_id: Mapped[int] = mapped_column(ForeignKey("profiles.id"), nullable=False)
-    measured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    measured_at: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), nullable=False)
     source: Mapped[str] = mapped_column(String(32), nullable=False)
     assignment_state: Mapped[str] = mapped_column(String(32), nullable=False, default="confirmed")
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
@@ -126,9 +146,9 @@ class WeighSession(Base):
     selected_profile_id: Mapped[int] = mapped_column(ForeignKey("profiles.id"), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     adapter_mode: Mapped[str] = mapped_column(String(32), nullable=False)
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(timezone=True))
     measurement_id: Mapped[int | None] = mapped_column(ForeignKey("measurements.id"))
     anomaly_score: Mapped[float | None] = mapped_column(Float)
     requires_confirmation: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -143,12 +163,12 @@ class ProfileHealthAnalysis(Base):
     measurement_ids_json: Mapped[list[int]] = mapped_column(JSON, default=list, nullable=False)
     measurement_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     prompt_hash: Mapped[str | None] = mapped_column(String(64))
-    settings_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    settings_updated_at: Mapped[datetime | None] = mapped_column(UTCDateTime(timezone=True))
     summary: Mapped[str | None] = mapped_column(Text)
     concern_level: Mapped[str | None] = mapped_column(String(32))
     highlights_json: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     advice: Mapped[str | None] = mapped_column(Text)
-    generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    generated_at: Mapped[datetime | None] = mapped_column(UTCDateTime(timezone=True))
     is_stale: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text)
 
@@ -161,11 +181,11 @@ class AppleHealthSnapshot(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     profile_id: Mapped[int] = mapped_column(ForeignKey("profiles.id"), nullable=False, index=True)
     snapshot_date: Mapped[date] = mapped_column(Date, nullable=True, index=True)
-    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), nullable=False)
+    period_start: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), nullable=False)
+    period_end: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), nullable=False)
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow,
+        UTCDateTime(timezone=True), default=utcnow, onupdate=utcnow,
     )
