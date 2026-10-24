@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 import threading
@@ -70,14 +69,12 @@ def _refresh_health_analysis_in_background(
                 db, profile, force_refresh=True, apple_health=apple_health,
             )
             try:
-                asyncio.run(
-                    events.broadcast(
-                        {
-                            "type": "health_analysis.updated",
-                            "profile_id": profile_id,
-                            "health_analysis": analysis.model_dump(mode="json"),
-                        }
-                    )
+                events.broadcast_from_thread(
+                    {
+                        "type": "health_analysis.updated",
+                        "profile_id": profile_id,
+                        "health_analysis": analysis.model_dump(mode="json"),
+                    }
                 )
             except Exception:
                 pass  # Best-effort: analysis is saved even if broadcast fails
