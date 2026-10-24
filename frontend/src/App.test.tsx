@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { App } from "./App";
 
@@ -157,5 +157,55 @@ describe("App", () => {
     expect(await screen.findByText("Stable overall health trend.")).toBeInTheDocument();
     expect(screen.getByText("Low concern")).toBeInTheDocument();
     expect(screen.getByText(/Keep your current routine steady/)).toBeInTheDocument();
+  });
+
+  it("reconnects the live socket and reloads after the server drops it", async () => {
+    window.localStorage.setItem("local-scale:selected-profile-id", "1");
+    const fetchMock = vi.fn(async (input: RequestInfo) => ({
+      ok: true,
+      status: 200,
+      json: async () => (String(input).includes("/sessions/current") ? null : dashboardPayload),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    type FakeSocket = { onopen: (() => void) | null; onclose: (() => void) | null };
+    const sockets: FakeSocket[] = [];
+    vi.stubGlobal(
+      "WebSocket",
+      class {
+        readyState = 1;
+        onopen: (() => void) | null = null;
+        onclose: (() => void) | null = null;
+        onmessage: ((event: MessageEvent) => void) | null = null;
+        constructor() {
+          sockets.push(this);
+        }
+        close() {}
+        send() {}
+      },
+    );
+    const dashboardCalls = () =>
+      fetchMock.mock.calls.filter(([input]) => String(input).startsWith("/api/dashboard"))
+        .length;
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(<App />);
+      expect(await screen.findByText("Stable overall health trend.")).toBeInTheDocument();
+      expect(sockets).toHaveLength(1);
+      const callsBeforeDrop = dashboardCalls();
+
+      act(() => sockets[0].onclose?.());
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(sockets).toHaveLength(2);
+
+      act(() => sockets[1].onopen?.());
+      await waitFor(() => {
+        expect(dashboardCalls()).toBeGreaterThan(callsBeforeDrop);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

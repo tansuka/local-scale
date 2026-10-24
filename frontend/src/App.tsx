@@ -207,15 +207,13 @@ export function App() {
 
   useEffect(() => {
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-    const websocket = new WebSocket(`${protocol}://${window.location.host}/api/ws/live`);
-    websocketRef.current = websocket;
-    const keepalive = window.setInterval(() => {
-      if (websocket.readyState === WebSocket.OPEN) {
-        websocket.send("ping");
-      }
-    }, 25000);
+    const url = `${protocol}://${window.location.host}/api/ws/live`;
+    let websocket: WebSocket;
+    let reconnectAttempts = 0;
+    let reconnectTimer: number | undefined;
+    let disposed = false;
 
-    websocket.onmessage = (event) => {
+    const handleMessage = (event: MessageEvent) => {
       const payload = JSON.parse(event.data) as LiveEvent;
       if (payload.type === "session.updated") {
         setCurrentSession(payload.session);
@@ -239,8 +237,44 @@ export function App() {
       }
     };
 
+    const connect = () => {
+      websocket = new WebSocket(url);
+      websocketRef.current = websocket;
+      websocket.onmessage = handleMessage;
+      websocket.onopen = () => {
+        if (reconnectAttempts > 0) {
+          // Anything broadcast while the socket was down was missed; reload.
+          void hydrateDashboard(selectedProfileId).catch((caughtError: Error) =>
+            setError(caughtError.message),
+          );
+          void fetchCurrentSession()
+            .then(setCurrentSession)
+            .catch((caughtError: Error) => setError(caughtError.message));
+        }
+        reconnectAttempts = 0;
+      };
+      websocket.onclose = () => {
+        if (disposed) {
+          return;
+        }
+        // Back off 1s, 2s, 4s ... up to 30s while the server is away (restart, deploy).
+        const delay = Math.min(30000, 1000 * 2 ** reconnectAttempts);
+        reconnectAttempts += 1;
+        reconnectTimer = window.setTimeout(connect, delay);
+      };
+    };
+
+    connect();
+    const keepalive = window.setInterval(() => {
+      if (websocket.readyState === WebSocket.OPEN) {
+        websocket.send("ping");
+      }
+    }, 25000);
+
     return () => {
+      disposed = true;
       window.clearInterval(keepalive);
+      window.clearTimeout(reconnectTimer);
       websocket.close();
     };
   }, [selectedProfileId]);
