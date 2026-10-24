@@ -9,18 +9,17 @@ import {
 import type { Measurement, Profile } from "../lib/types";
 import { formatDateTime } from "../lib/dates";
 
+type LabValuesUpdate = {
+  waist_cm?: number | null;
+  triglycerides_mmol_l?: number | null;
+  hdl_mmol_l?: number | null;
+};
+
 type HistoryTableProps = {
   measurements: Measurement[];
   profiles: Profile[];
   selectedProfileId?: number | null;
-  onUpdateMeasurement: (
-    measurementId: number,
-    payload: {
-      waist_cm?: number | null;
-      triglycerides_mmol_l?: number | null;
-      hdl_mmol_l?: number | null;
-    },
-  ) => Promise<void>;
+  onUpdateMeasurement: (measurementId: number, payload: LabValuesUpdate) => Promise<void>;
   onReassign: (measurementId: number, profileId: number) => Promise<void>;
   onDelete: (measurementId: number) => Promise<void>;
   eyebrow?: string;
@@ -66,6 +65,17 @@ export function HistoryTable({
   const [hdlDrafts, setHdlDrafts] = useState<Record<number, string>>({});
   const showEstimateNote = hasAnthropometricEstimate(measurements);
   const showVaiNote = hasVaiEstimate(measurements);
+
+  const discardDrafts = (measurementId: number) => {
+    const withoutMeasurement = (current: Record<number, string>) => {
+      const next = { ...current };
+      delete next[measurementId];
+      return next;
+    };
+    setWaistDrafts(withoutMeasurement);
+    setTriglycerideDrafts(withoutMeasurement);
+    setHdlDrafts(withoutMeasurement);
+  };
 
   const defaultTargets = useMemo(() => {
     const mapping: Record<number, number> = {};
@@ -203,17 +213,29 @@ export function HistoryTable({
                             onClick={async () => {
                               setBusyMeasurementId(measurement.id);
                               try {
-                                const rawValue = waistDrafts[measurement.id];
-                                await onUpdateMeasurement(measurement.id, {
-                                  waist_cm: rawValue ? Number(rawValue) : null,
-                                  triglycerides_mmol_l: triglycerideDrafts[measurement.id]
-                                    ? Number(triglycerideDrafts[measurement.id])
-                                    : null,
-                                  hdl_mmol_l: hdlDrafts[measurement.id]
-                                    ? Number(hdlDrafts[measurement.id])
-                                    : null,
-                                });
+                                // Send only the fields that were edited. The server
+                                // clears a field sent as null, so untouched fields
+                                // must be left out rather than sent empty.
+                                const payload: LabValuesUpdate = {};
+                                const waistDraft = waistDrafts[measurement.id];
+                                const triglycerideDraft = triglycerideDrafts[measurement.id];
+                                const hdlDraft = hdlDrafts[measurement.id];
+                                if (waistDraft !== undefined) {
+                                  payload.waist_cm = waistDraft ? Number(waistDraft) : null;
+                                }
+                                if (triglycerideDraft !== undefined) {
+                                  payload.triglycerides_mmol_l = triglycerideDraft
+                                    ? Number(triglycerideDraft)
+                                    : null;
+                                }
+                                if (hdlDraft !== undefined) {
+                                  payload.hdl_mmol_l = hdlDraft ? Number(hdlDraft) : null;
+                                }
+                                if (Object.keys(payload).length > 0) {
+                                  await onUpdateMeasurement(measurement.id, payload);
+                                }
                                 setEditingWaistMeasurementId(null);
+                                discardDrafts(measurement.id);
                               } finally {
                                 setBusyMeasurementId(null);
                               }
@@ -227,21 +249,7 @@ export function HistoryTable({
                             disabled={busyMeasurementId === measurement.id}
                             onClick={() => {
                               setEditingWaistMeasurementId(null);
-                              setWaistDrafts((current) => {
-                                const next = { ...current };
-                                delete next[measurement.id];
-                                return next;
-                              });
-                              setTriglycerideDrafts((current) => {
-                                const next = { ...current };
-                                delete next[measurement.id];
-                                return next;
-                              });
-                              setHdlDrafts((current) => {
-                                const next = { ...current };
-                                delete next[measurement.id];
-                                return next;
-                              });
+                              discardDrafts(measurement.id);
                             }}
                             type="button"
                           >
