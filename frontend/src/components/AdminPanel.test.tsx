@@ -16,7 +16,6 @@ const selectedProfile = {
 
 describe("AdminPanel", () => {
   it("loads settings, saves updates, and triggers a manual analysis run", async () => {
-    const onAnalysisUpdated = vi.fn();
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
@@ -47,22 +46,22 @@ describe("AdminPanel", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        status: 200,
+        status: 202,
         json: async () => ({
-          status: "ready",
-          summary: "Fresh analysis summary.",
-          concern_level: "moderate",
-          highlights: ["Hydration dipped slightly."],
-          advice: "Drink a little more water tomorrow.",
-          generated_at: "2026-03-24T10:00:00Z",
-          measurement_count: 7,
+          status: "pending",
+          summary: null,
+          concern_level: null,
+          highlights: [],
+          advice: null,
+          generated_at: null,
+          measurement_count: 0,
           is_stale: false,
           error_message: null,
         }),
       });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<AdminPanel selectedProfile={selectedProfile} onAnalysisUpdated={onAnalysisUpdated} />);
+    render(<AdminPanel selectedProfile={selectedProfile} />);
 
     expect(await screen.findByDisplayValue("http://localhost:11434/v1")).toBeInTheDocument();
 
@@ -85,9 +84,10 @@ describe("AdminPanel", () => {
         "/api/admin/profiles/1/health-analysis/run",
         expect.objectContaining({ method: "POST" }),
       );
-      expect(onAnalysisUpdated).toHaveBeenCalledWith(
-        expect.objectContaining({ summary: "Fresh analysis summary." }),
-      );
     });
+    // The run finishes in the background; the result arrives over the live WebSocket.
+    expect(
+      await screen.findByText(/Analysis for Alex is running in the background/),
+    ).toBeInTheDocument();
   });
 });

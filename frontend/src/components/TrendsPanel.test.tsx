@@ -82,6 +82,13 @@ const charts = {
 describe("TrendsPanel", () => {
   beforeEach(() => {
     setOptionMock.mockClear();
+    // The panel defaults to "This Month"; pin the clock so the fixtures stay inside it.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-03-20T12:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("defaults to weight and switches headings when the metric changes", () => {

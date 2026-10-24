@@ -479,10 +479,7 @@ export function App() {
 
           {activeTab === "admin" ? (
             <div className="tab-content">
-              <AdminPanel
-                selectedProfile={selectedProfile}
-                onAnalysisUpdated={(analysis) => setHealthAnalysis(analysis)}
-              />
+              <AdminPanel selectedProfile={selectedProfile} />
             </div>
           ) : null}
         </section>

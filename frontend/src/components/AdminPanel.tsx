@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 
 import { fetchLlmSettings, runHealthAnalysis, updateLlmSettings } from "../lib/api";
-import type { HealthAnalysis, LlmSettings, Profile } from "../lib/types";
+import type { LlmSettings, Profile } from "../lib/types";
 
 type AdminPanelProps = {
   selectedProfile?: Profile | null;
-  onAnalysisUpdated: (analysis: HealthAnalysis) => void;
 };
 
 type DraftState = {
@@ -34,7 +33,7 @@ function draftFromSettings(settings: LlmSettings | null): DraftState {
   };
 }
 
-export function AdminPanel({ selectedProfile, onAnalysisUpdated }: AdminPanelProps) {
+export function AdminPanel({ selectedProfile }: AdminPanelProps) {
   const [settings, setSettings] = useState<LlmSettings | null>(null);
   const [draft, setDraft] = useState<DraftState>(EMPTY_DRAFT);
   const [loading, setLoading] = useState(true);
