@@ -565,10 +565,13 @@ async def websocket_live(
 def frontend_file(dist_path: Path, request_path: str) -> FileResponse | None:
     if not dist_path.exists():
         return None
-    candidate = dist_path / request_path
-    if request_path and candidate.exists() and candidate.is_file():
+    dist_root = dist_path.resolve()
+    # Resolve before checking containment: request paths arrive percent-decoded,
+    # so "%2e%2e%2f" reaches here as "../" and must not escape the dist folder.
+    candidate = (dist_root / request_path).resolve()
+    if request_path and candidate.is_relative_to(dist_root) and candidate.is_file():
         return FileResponse(candidate)
-    index_file = dist_path / "index.html"
+    index_file = dist_root / "index.html"
     if index_file.exists():
         return FileResponse(index_file)
     return None
