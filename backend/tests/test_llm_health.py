@@ -56,6 +56,23 @@ def _configure_llm(client) -> None:
     assert response.status_code == 200
 
 
+def _run_analysis_and_wait(client, profile_id: int) -> dict:
+    """Trigger a manual run, wait for its background thread, and return the stored analysis."""
+    response = client.post(f"/api/admin/profiles/{profile_id}/health-analysis/run")
+    assert response.status_code == 202
+    assert response.json()["status"] == "pending"
+
+    analyzer = client.app.state.health_analyzer
+    deadline = time.monotonic() + 5.0
+    while profile_id in analyzer._refreshing_profile_ids:
+        assert time.monotonic() < deadline, "Background analysis did not finish."
+        time.sleep(0.01)
+
+    dashboard = client.get(f"/api/dashboard?profile_id={profile_id}")
+    assert dashboard.status_code == 200
+    return dashboard.json()["health_analysis"]
+
+
 def test_dashboard_reports_not_configured_analysis_by_default(client):
     response = client.get("/api/dashboard")
 
@@ -113,10 +130,9 @@ def test_manual_run_uses_latest_seven_measurements(client):
 
     analyzer._request_completion = fake_request_completion
 
-    response = client.post(f"/api/admin/profiles/{profile_id}/health-analysis/run")
-    assert response.status_code == 200
-    assert response.json()["status"] == "ready"
-    assert response.json()["measurement_count"] == 7
+    analysis = _run_analysis_and_wait(client, profile_id)
+    assert analysis["status"] == "ready"
+    assert analysis["measurement_count"] == 7
 
     payload = captured_payload["payload"]
     assert isinstance(payload, dict)
@@ -140,8 +156,7 @@ def test_dashboard_returns_stale_cached_analysis_when_refresh_fails(client):
             "advice": "Stay consistent with your routine.",
         }
     )
-    first_run = client.post(f"/api/admin/profiles/{profile_id}/health-analysis/run")
-    assert first_run.status_code == 200
+    assert _run_analysis_and_wait(client, profile_id)["summary"] == "Initial cached summary."
 
     _add_measurement(
         client,
@@ -188,8 +203,7 @@ def test_prompt_hash_change_invalidates_cache(client):
             "advice": "Version one advice.",
         }
     )
-    first_run = client.post(f"/api/admin/profiles/{profile_id}/health-analysis/run")
-    assert first_run.status_code == 200
+    assert _run_analysis_and_wait(client, profile_id)["summary"] == "Prompt version one."
 
     analyzer._prompt = PromptState(
         path=analyzer._prompt.path,
@@ -258,10 +272,9 @@ def test_llm_request_retries_without_response_format_for_compatible_400(client):
 
     analyzer._post_completion = fake_post_completion
 
-    response = client.post(f"/api/admin/profiles/{profile_id}/health-analysis/run")
-    assert response.status_code == 200
-    assert response.json()["summary"] == "Retry succeeded."
-    assert response.json()["advice"] == "Keep the current routine steady."
+    analysis = _run_analysis_and_wait(client, profile_id)
+    assert analysis["summary"] == "Retry succeeded."
+    assert analysis["advice"] == "Keep the current routine steady."
     assert "response_format" in calls[0]
     assert "response_format" not in calls[1]
 
@@ -282,10 +295,9 @@ def test_llm_request_surfaces_response_body_for_non_compatible_400(client):
 
     analyzer._post_completion = fake_post_completion
 
-    response = client.post(f"/api/admin/profiles/{profile_id}/health-analysis/run")
-    assert response.status_code == 200
-    assert response.json()["status"] == "error"
-    assert "model not loaded" in response.json()["error_message"]
+    analysis = _run_analysis_and_wait(client, profile_id)
+    assert analysis["status"] == "error"
+    assert "model not loaded" in analysis["error_message"]
 
 
 def test_dashboard_returns_pending_analysis_immediately_when_cache_is_missing(client):
