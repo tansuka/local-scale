@@ -181,6 +181,14 @@ def estimate_metrics(
     return estimates
 
 
+def _skeletal_muscle_pct_matches_mass(measurement: Measurement) -> bool:
+    """Whether the stored percentage is the one normalisation derives from the stored mass."""
+    derived_pct = round(
+        float(measurement.skeletal_muscle_weight_kg) / float(measurement.weight_kg) * 100.0, 2
+    )
+    return abs(float(measurement.skeletal_muscle_pct) - derived_pct) < 0.011
+
+
 def backfill_missing_measurements(db: Session) -> int:
     rows = list(
         db.execute(
@@ -204,6 +212,19 @@ def backfill_missing_measurements(db: Session) -> int:
             if waist_cm is not None and "waist_cm" not in source_metric_map:
                 source_metric_map["waist_cm"] = "carried_forward"
 
+        skeletal_muscle_weight_kg = measurement.skeletal_muscle_weight_kg
+        if (
+            source_metric_map.get("skeletal_muscle_weight_kg") == ANTHROPOMETRIC_SOURCE
+            and measurement.skeletal_muscle_pct is not None
+            and skeletal_muscle_weight_kg is not None
+            and not _skeletal_muscle_pct_matches_mass(measurement)
+        ):
+            # Stored before reported percentages took precedence: the percentage
+            # came from the scale or an import, but an estimate replaced the mass
+            # that follows from it. Drop the estimate so the mass is re-derived.
+            skeletal_muscle_weight_kg = None
+            source_metric_map.pop("skeletal_muscle_weight_kg", None)
+
         normalized = normalize_measurement(
             profile,
             {
@@ -218,7 +239,7 @@ def backfill_missing_measurements(db: Session) -> int:
                 "fat_pct": measurement.fat_pct,
                 "fat_weight_kg": measurement.fat_weight_kg,
                 "skeletal_muscle_pct": measurement.skeletal_muscle_pct,
-                "skeletal_muscle_weight_kg": measurement.skeletal_muscle_weight_kg,
+                "skeletal_muscle_weight_kg": skeletal_muscle_weight_kg,
                 "muscle_pct": measurement.muscle_pct,
                 "muscle_weight_kg": measurement.muscle_weight_kg,
                 "visceral_fat": measurement.visceral_fat,

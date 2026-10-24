@@ -208,3 +208,66 @@ def test_create_all_adds_waist_column_to_existing_profiles_table(tmp_path):
     assert "hdl_mmol_l" in columns
     assert "visceral_adiposity_index" in columns
     assert waist_value == 84
+
+
+def _insert_skeletal_muscle_measurement(db, *, source_metric_map: dict[str, str], **values) -> int:
+    profile = Profile(
+        name="Sam",
+        sex="male",
+        birth_date=date(1990, 1, 1),
+        height_cm=180,
+        units="metric",
+        color="#0f766e",
+        active=True,
+    )
+    db.add(profile)
+    db.flush()
+    measurement = Measurement(
+        profile_id=profile.id,
+        measured_at=datetime(2026, 3, 17, 7, 10, tzinfo=timezone.utc),
+        source="replay",
+        assignment_state="confirmed",
+        confidence=1.0,
+        anomaly_score=0.0,
+        weight_kg=74.19,
+        fat_pct=19.9,
+        water_pct=55.2,
+        status_by_metric={},
+        source_metric_map={"weight_kg": "replay", "fat_pct": "replay", "water_pct": "replay", **source_metric_map},
+        raw_payload_json={},
+        **values,
+    )
+    db.add(measurement)
+    db.commit()
+    db.refresh(measurement)
+    return measurement.id
+
+
+def test_backfill_rederives_mass_that_an_estimate_replaced_for_a_reported_pct(tmp_path):
+    database = Database(_settings(tmp_path))
+    database.create_all()
+
+    with database.make_session() as db:
+        # Reported 41.2%, but the Lee estimate (31.91 kg) was stored as the mass.
+        measurement_id = _insert_skeletal_muscle_measurement(
+            db,
+            skeletal_muscle_pct=41.2,
+            skeletal_muscle_weight_kg=31.91,
+            source_metric_map={
+                "skeletal_muscle_pct": "replay",
+                "skeletal_muscle_weight_kg": "anthropometric_estimated",
+            },
+        )
+
+    with database.make_session() as db:
+        assert backfill_missing_measurements(db) == 1
+        measurement = db.get(Measurement, measurement_id)
+
+        assert measurement.skeletal_muscle_pct == 41.2
+        assert measurement.skeletal_muscle_weight_kg == 30.57
+        assert measurement.source_metric_map["skeletal_muscle_pct"] == "replay"
+        assert measurement.source_metric_map["skeletal_muscle_weight_kg"] == "computed"
+        assert measurement.status_by_metric["skeletal_muscle_weight_kg"] == "low"
+
+    with database.make_session() as db:
+        assert backfill_missing_measurements(db) == 0

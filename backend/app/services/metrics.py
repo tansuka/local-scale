@@ -56,11 +56,19 @@ def normalize_measurement(profile: Profile, raw: dict) -> dict:
             measurement_date=measurement_date,
         )
         for metric, value in anthropometric_estimates.items():
-            if effective_raw.get(metric) is None:
-                effective_raw[metric] = value
-                source_metric_map[metric] = (
-                    VAI_SOURCE if metric == "visceral_adiposity_index" else ANTHROPOMETRIC_SOURCE
-                )
+            if effective_raw.get(metric) is not None:
+                continue
+            # A reported skeletal muscle percentage already fixes the mass; it is
+            # derived from that below instead of being replaced by an estimate.
+            if (
+                metric == "skeletal_muscle_weight_kg"
+                and effective_raw.get("skeletal_muscle_pct") is not None
+            ):
+                continue
+            effective_raw[metric] = value
+            source_metric_map[metric] = (
+                VAI_SOURCE if metric == "visceral_adiposity_index" else ANTHROPOMETRIC_SOURCE
+            )
 
     height_m = profile.height_cm / 100.0
     bmi = effective_raw.get("bmi") or round(weight_kg / (height_m**2), 1)
