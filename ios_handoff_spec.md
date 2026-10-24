@@ -543,7 +543,7 @@ POST /api/measurements/submit → 201 Measurement
 }
 ```
 
-**Fields:** `profile_id` (required), `measured_at` (required, ISO8601), `weight_kg` (required, >0), `source` (default `"ios_bluetooth"`), `raw_payload_json` (default `{}`), `source_metric_map` (default `{}`).
+**Fields:** `profile_id` (required), `measured_at` (required, ISO8601), `weight_kg` (required, >0), `source` (default `"ios_bluetooth"`), `raw_payload_json` (default `{}`), `source_metric_map` (default `{}`). Optional scale-computed body composition — `fat_pct`, `water_pct`, `muscle_pct` (0–100) and `bone_weight_kg` — is stored as reported instead of estimated (sent by the Medisana BS44x driver).
 
 **Server-side behavior:**
 1. Validates profile exists → 404 if not

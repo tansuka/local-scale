@@ -248,6 +248,10 @@ async def post_submit_measurement(
         "raw_payload_json": payload.raw_payload_json,
         "source_metric_map": payload.source_metric_map,
     }
+    for metric in ("fat_pct", "water_pct", "muscle_pct", "bone_weight_kg"):
+        value = getattr(payload, metric)
+        if value is not None:
+            raw[metric] = value
     # Carry forward waist_cm from most recent measurement if available
     recent = recent_measurements(db, profile.id, limit=14)
     latest_waist = next(

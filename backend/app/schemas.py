@@ -94,6 +94,12 @@ class MeasurementSubmitRequest(BaseModel):
     measured_at: datetime
     source: str = "ios_bluetooth"
     weight_kg: float = Field(gt=0)
+    # Body composition computed on the scale itself (e.g. Medisana BS44x).
+    # Omitted for scales that only report weight; the server estimates those.
+    fat_pct: float | None = Field(default=None, gt=0, lt=100)
+    water_pct: float | None = Field(default=None, gt=0, lt=100)
+    muscle_pct: float | None = Field(default=None, gt=0, lt=100)
+    bone_weight_kg: float | None = Field(default=None, gt=0)
     raw_payload_json: dict[str, Any] = Field(default_factory=dict)
     source_metric_map: dict[str, str] = Field(default_factory=dict)
 
