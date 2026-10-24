@@ -644,12 +644,13 @@ class LiveBleAdapter(ScaleAdapter):
             finally:
                 if scanner_running:
                     await scanner.stop()
-            if seen_devices:
-                return (
-                    list(seen_devices.values()),
-                    list(matched_targets.values()),
-                    advertisement_history,
-                )
+            # Return even when the round saw nothing: an empty round is a valid
+            # outcome, and returning None here made the caller's unpacking fail.
+            return (
+                list(seen_devices.values()),
+                list(matched_targets.values()),
+                advertisement_history,
+            )
         except TypeError:
             devices = await scanner_cls.discover(timeout=self._scan_timeout_seconds)
             round_payloads = [self._serialize_match(device) for device in devices]

@@ -319,3 +319,36 @@ def test_capture_measurement_raises_when_no_candidate(monkeypatch, tmp_path: Pat
         asyncio.run(adapter.capture_measurement(SimpleNamespace(name="Tansu"), []))
 
     assert "no final advertisement packet arrived" in str(exc_info.value).lower()
+
+
+class _SilentScanner:
+    """A scanner whose rounds complete without detecting any device."""
+
+    def __init__(self, detection_callback, **_kwargs):
+        self._detection_callback = detection_callback
+
+    async def start(self) -> None:
+        return None
+
+    async def stop(self) -> None:
+        return None
+
+
+def test_scan_once_returns_empty_results_when_nothing_is_seen(tmp_path: Path):
+    adapter = LiveBleAdapter(build_settings(tmp_path))
+    adapter._scan_timeout_seconds = 0.0
+
+    assert asyncio.run(adapter._scan_once(_SilentScanner, 1)) == ([], [], [])
+
+
+def test_capture_measurement_reports_scale_not_seen_after_silent_scan(
+    monkeypatch, tmp_path: Path
+):
+    adapter = LiveBleAdapter(build_settings(tmp_path))
+    adapter._scan_timeout_seconds = 0.0
+    monkeypatch.setattr("bleak.BleakScanner", _SilentScanner)
+
+    with pytest.raises(ScaleAdapterError) as exc_info:
+        asyncio.run(adapter.capture_measurement(SimpleNamespace(name="Tansu"), []))
+
+    assert "target scale was not seen" in str(exc_info.value).lower()
